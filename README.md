@@ -66,18 +66,6 @@ npm run dev -- --local --config wrangler.jsonc
 
 `.dev.vars` 已被忽略，请勿提交到仓库。
 
-## 回归验证
-
-测试使用 Node.js 24 或更高版本，在内存 SQLite、模拟 R2 和模拟远程接口上执行，不连接真实 Cloudflare 账号。
-
-```bash
-npm run check
-npm test
-npx wrangler deploy --dry-run --config wrangler.jsonc
-```
-
-部署后再验证：普通与密码分享下载、激活码余额、并发限额、S3/WebDAV 上传下载、WebDAV 挂载与文件操作、OAuth 登录回跳，以及流量统计。旧记录的文件大小会在下载或 HEAD 请求时与存储元数据同步。
-
 ## 部署到 Cloudflare
 
 部署步骤见 [DEPLOY.md](DEPLOY.md)，外部存储配置见 [DEPLOY-S3.md](DEPLOY-S3.md)。以仓库当前的 `wrangler.jsonc` 为准，并确认它指向你实际使用的资源。
