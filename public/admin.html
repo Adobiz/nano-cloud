@@ -3040,7 +3040,7 @@ async function loadSettings(){
       if (!url || !user) { result.textContent = LANG==='zh' ? '请填写 URL 和用户名' : 'URL and username required'; result.style.color = '#fda293'; return; }
       result.textContent = '…'; result.style.color = 'var(--text-3)';
       try {
-        const payload: any = { provider: 'webdav', url, username: user };
+        const payload = { provider: 'webdav', url, username: user };
         if (pwd) payload.password = pwd;
         const r = await api('/api/admin/storage/test', { method: 'POST', body: JSON.stringify(payload) });
         if (r.ok) {
@@ -3050,7 +3050,7 @@ async function loadSettings(){
           result.textContent = `✗ ${esc(t('storageBackendConnectFail'))}: ${r.message || r.error || ''}`;
           result.style.color = '#fda293';
         }
-      } catch (e: any) {
+      } catch (e) {
         result.textContent = `✗ ${esc(t('storageBackendConnectFail'))}: ${e?.message ?? ''}`;
         result.style.color = '#fda293';
       }
@@ -3060,7 +3060,7 @@ async function loadSettings(){
       const url = $('#wd-url').value.trim().replace(/\/+$/, '');
       const user = $('#wd-user').value.trim();
       const pwdVal = $('#wd-pwd').value.trim();
-      const body: any = {
+      const body = {
         storage_provider: 'webdav',
         storage_webdav_url: url,
         storage_webdav_username: user,
