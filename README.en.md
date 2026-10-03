@@ -59,18 +59,6 @@ npm run dev -- --local --config wrangler.jsonc
 
 Open [http://localhost:8787/admin](http://localhost:8787/admin). The current configuration declares D1/R2 bindings, allowing Wrangler to emulate them locally. Database initialization runs on first access. Do not commit `.dev.vars`.
 
-## Regression checks
-
-Use Node.js 24 or newer. The tests use in-memory SQLite and fake storage/API responses without connecting to a Cloudflare account.
-
-```bash
-npm run check
-npm test
-npx wrangler deploy --dry-run --config wrangler.jsonc
-```
-
-After deployment, verify share/password downloads, activation quotas, concurrent limits, remote storage, WebDAV mounting and file operations, OAuth callbacks and traffic statistics.
-
 ## Deployment
 
 See [DEPLOY.md](DEPLOY.md) and [DEPLOY-S3.md](DEPLOY-S3.md). Use the current `wrangler.jsonc` and verify that its bindings point to your intended resources.
