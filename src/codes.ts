@@ -158,57 +158,35 @@ export async function deductQuota(
   row: ActivationCodeRow,
   bytes: number
 ): Promise<{ ok: boolean; remaining: number; exhausted: boolean; reason?: string; message?: string }> {
-  const now = Date.now();
-
-  // 先查最新状态（避免 stale cache）
-  const fresh = (await env.db
-    .prepare("SELECT * FROM activation_codes WHERE id = ?1")
-    .bind(row.id)
-    .first()) as ActivationCodeRow | null;
-  if (!fresh) return { ok: false, remaining: 0, exhausted: true, reason: "not_found", message: "码不存在" };
-  if (fresh.status === "revoked") return { ok: false, remaining: 0, exhausted: true, reason: "revoked", message: "该激活码已被作废" };
-  if (fresh.expires_at && fresh.expires_at < now) return { ok: false, remaining: 0, exhausted: true, reason: "expired", message: "该激活码已过期" };
-
-  // 流量无限 → 直接加 used_bytes 都行，不做耗尽判断
-  const unlimited = fresh.traffic_bytes === 0;
-  const newUsed = fresh.used_bytes + bytes;
-
-  let sql: string;
-  let bind: any[];
-
-  if (unlimited) {
-    sql = "UPDATE activation_codes SET used_bytes = ?1 WHERE id = ?2";
-    bind = [newUsed, fresh.id];
-  } else {
-    // 原子 check-and-update：只有 used + bytes <= total 才更新，防止并发超扣
-    // 额度耗尽时自动把 status 切为 'exhausted'，让后台统计/过滤能正确识别
-    sql =
-      "UPDATE activation_codes SET used_bytes = ?1, status = CASE WHEN ?1 >= traffic_bytes THEN 'exhausted' ELSE status END WHERE id = ?2 AND used_bytes + ?3 <= traffic_bytes AND status != 'revoked'";
-    bind = [newUsed, fresh.id, bytes];
+  const statement = prepareQuotaDeduction(env, row.id, bytes, Date.now());
+  const updated = await statement.first<{ used_bytes: number; traffic_bytes: number }>();
+  if (!updated) {
+    return { ok: false, remaining: 0, exhausted: true, reason: "insufficient_quota", message: "激活码不可用或剩余额度不足" };
   }
+  const remaining = updated.traffic_bytes === 0 ? -1 : Math.max(0, updated.traffic_bytes - updated.used_bytes);
+  return { ok: true, remaining, exhausted: remaining === 0 };
+}
 
-  const result = await env.db.prepare(sql).bind(...bind).run();
-  const changed = (result.meta.changes ?? 0) as number;
-  if (changed === 0) {
-    // 更新失败 → 再次读状态判断具体原因
-    const again = (await env.db.prepare("SELECT * FROM activation_codes WHERE id = ?1").bind(fresh.id).first()) as ActivationCodeRow;
-    if (!again) return { ok: false, remaining: 0, exhausted: true, reason: "not_found", message: "码不存在" };
-    if (again.status === "revoked") return { ok: false, remaining: 0, exhausted: true, reason: "revoked", message: "该激活码已被作废" };
-    if (again.traffic_bytes > 0 && again.used_bytes >= again.traffic_bytes) {
-      return {
-        ok: false,
-        remaining: 0,
-        exhausted: true,
-        reason: "exhausted",
-        message: again.quota_message || "激活码流量已耗尽。",
-      };
-    }
-    return { ok: false, remaining: Math.max(0, again.traffic_bytes - again.used_bytes), exhausted: true, reason: "unknown", message: "扣减失败" };
-  }
-
-  const remaining = unlimited ? -1 : Math.max(0, fresh.traffic_bytes - newUsed);
-  const exhausted = !unlimited && newUsed >= fresh.traffic_bytes;
-  return { ok: true, remaining, exhausted };
+/** 数据库内原子扣费和首次激活；guard 用于把下载名额检查纳入同一事务。 */
+export function prepareQuotaDeduction(
+  env: Env, id: string, bytes: number, now: number,
+  guard = "", guardBindings: (string | number)[] = []
+): D1PreparedStatement {
+  if (!Number.isSafeInteger(bytes) || bytes < 0) throw new RangeError("Invalid quota byte count");
+  return env.db.prepare(`
+    UPDATE activation_codes SET
+      used_bytes = used_bytes + ?1,
+      status = CASE WHEN traffic_bytes > 0 AND used_bytes + ?1 >= traffic_bytes THEN 'exhausted'
+        WHEN status = 'unused' THEN 'active' ELSE status END,
+      activated_at = COALESCE(activated_at, ?2),
+      expires_at = CASE WHEN status = 'unused' AND expires_at IS NULL AND days_valid > 0
+        THEN ?2 + days_valid * 86400000 ELSE expires_at END
+    WHERE id = ?3 AND status IN ('unused', 'active')
+      AND (expires_at IS NULL OR expires_at >= ?2)
+      AND (traffic_bytes = 0 OR used_bytes + ?1 <= traffic_bytes)
+      ${guard}
+    RETURNING used_bytes, traffic_bytes
+  `).bind(bytes, now, id, ...guardBindings);
 }
 
 /** 激活：首次使用时把码置为 active 并计算 expires_at */

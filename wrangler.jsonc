@@ -42,7 +42,7 @@
 
   // 将 public/*.html 作为文本模块导入
   "rules": [
-    { "type": "Text", "globs": ["**/*.html", "**/*.svg"], "fallthrough": true }
+    { "type": "Text", "globs": ["**/*.html", "**/*.svg", "**/*.geojson", "**/echarts.bundle.txt"], "fallthrough": true }
   ],
 
   "observability": { "enabled": true }

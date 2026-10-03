@@ -317,26 +317,21 @@ export async function addTraffic(env: Env, bytes: number): Promise<void> {
   const day = now.toISOString().slice(0, 10);
 
   await env.db.batch([
-    // ① 同步 traffic_month 到当月（幂等：同月时 value 不变）
+    // 必须先读取旧月份并累计，再更新月份；整个 batch 是一个事务。
+    env.db.prepare(
+      `INSERT INTO settings(key, value) VALUES('traffic_used_bytes', CAST(?2 AS TEXT))
+       ON CONFLICT(key) DO UPDATE SET value = CAST(
+         (CASE WHEN (SELECT value FROM settings WHERE key = 'traffic_month') = ?1
+           THEN CAST(settings.value AS INTEGER) ELSE 0 END) + ?2 AS TEXT)`
+    ).bind(month, bytes),
     env.db.prepare(
       "INSERT INTO settings(key, value) VALUES('traffic_month', ?1) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
     ).bind(month),
-
-    // ② 更新 traffic_used_bytes —— 跨月逻辑完全内联在 SQL 里
-    //    同月：累加旧值；跨月：从 0 开始加
-    env.db.prepare(
-      `UPDATE settings SET value = CAST(
-        CASE
-          WHEN (SELECT value FROM settings WHERE key = 'traffic_month') = ?1
-          THEN COALESCE((SELECT value FROM settings WHERE key = 'traffic_used_bytes'), '0')
-          ELSE '0'
-        END AS INTEGER) + ?2 AS TEXT)
-       WHERE key = 'traffic_used_bytes'`
-    ).bind(month, String(bytes)),
 
     // ③ traffic_stats 每日汇总（原本就是原子累加，保持不变）
     env.db.prepare(
       "INSERT INTO traffic_stats(day, bytes, downloads) VALUES(?1, ?2, 1) ON CONFLICT(day) DO UPDATE SET bytes = bytes + excluded.bytes, downloads = downloads + excluded.downloads"
     ).bind(day, bytes),
   ]);
+  invalidateSettingsCache();
 }

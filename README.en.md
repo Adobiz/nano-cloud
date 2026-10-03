@@ -37,7 +37,7 @@ A lightweight file-sharing drive built on Cloudflare Workers, R2 and D1, with S3
 - Download logs, daily traffic and country distribution, with optional Analytics Engine.
 - Chinese/English, responsive layouts and light/dark admin themes.
 
-Production code has no npm runtime dependencies. This version changes the upstream interface styles and project name while retaining upstream business logic. Previously identified issues have not been fixed as part of this version.
+Production code has no npm runtime dependencies. This version updates upstream styling and branding, with targeted fixes for admin JavaScript, sharing, global distribution, traffic accounting and prepaid activation quotas. Other reviewed issues still require separate fixes.
 
 ## Getting started
 
@@ -98,7 +98,20 @@ Check admin login, file upload/listing and a test share download. Check the mark
 npm run tail -- --config wrangler.jsonc
 ```
 
-This version has no `npm run check` or automated regression scripts. A successful Wrangler bundle does not validate inline browser JavaScript or all application flows.
+Using Node.js 24 after installing dependencies:
+
+```bash
+node scripts/check-downloads.mjs
+node scripts/check-global.mjs
+```
+
+Tests use in-memory SQLite, simulated storage and the real chart engine without accessing Cloudflare or live data. There is no `npm run check`; full TypeScript checking still reports known storage type errors.
+
+### Download accounting
+
+After authorization and object lookup, a D1 transaction reserves the download allowance and activation quota before returning a file. Insufficient quota blocks the file; unauthorized requests, missing objects, invalid ranges and HEAD do not spend quota. Range requests reserve only the requested bytes. Interrupted downloads are not automatically refunded.
+
+Traffic totals record server response lengths asynchronously, aggregate by UTC day, and reset at the first write in a new month. Country statistics use download logs; old entries without country metadata remain unknown. Map data and chart scripts are served by this Worker.
 
 ## Project structure
 

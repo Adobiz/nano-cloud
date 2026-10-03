@@ -225,7 +225,7 @@ const I18N = {
     // 通用
     login: '登录', logout: '退出', cancel: '取消', confirm: '确定', copy: '复制', close: '关闭',
     copied: '已复制到剪贴板', save: '保存设置', saved: '设置已保存', forever: '永久',
-    switchTo: 'EN', topbarSub: '管理后台 · Cloudflare Workers + R2',
+    switchTo: 'EN', topbarSub: '管理后台',
     // 登录
     loginSubtitle: '管理后台 · 请输入管理密钥登录', keyPlaceholder: '管理密钥 (admin)',
     // 标签
@@ -585,7 +585,7 @@ const I18N = {
     // 通用
     login: 'Log in', logout: 'Log out', cancel: 'Cancel', confirm: 'Confirm', copy: 'Copy', close: 'Close',
     copied: 'Copied to clipboard', save: 'Save Settings', saved: 'Settings saved', forever: 'Forever',
-    switchTo: '中文', topbarSub: 'Admin console · Cloudflare Workers + R2',
+    switchTo: '中文', topbarSub: 'Admin console',
     // 登录
     loginSubtitle: 'Admin console · Enter your admin key to continue', keyPlaceholder: 'Admin key (admin)',
     // 标签
@@ -2089,29 +2089,52 @@ let echartsLoadingPromise = null;
 let globalDays = 30;
 let globeChart = null;
 
-/** 动态加载 ECharts + echarts-gl + world-atlas（首次进入全球分布 Tab 时才加载） */
+let worldMapNames = new Set();
+let globeResizeHandler = null;
+
+/** Load the chart engine and GeoJSON from this Worker, then register real data. */
 function ensureECharts(){
   if (echartsLoaded) return Promise.resolve();
   if (echartsLoadingPromise) return echartsLoadingPromise;
-  echartsLoadingPromise = new Promise((resolve, reject) => {
-    // 按顺序加载：echarts → echarts-gl → world-atlas 地图数据
-    const loadScript = (src, cb) => {
-      const s = document.createElement('script');
-      s.src = src;
-      s.onload = cb;
-      s.onerror = () => reject(new Error('Failed to load ' + src));
-      document.head.appendChild(s);
-    };
-    loadScript('https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js', () => {
-      loadScript('https://cdn.jsdelivr.net/npm/echarts-gl@2.0.9/dist/echarts-gl.min.js', () => {
-        loadScript('https://cdn.jsdelivr.net/npm/echarts@5.5.1/map/json/world.json', () => {
-          echartsLoaded = true;
-          resolve();
-        });
-      });
+  echartsLoadingPromise = (async () => {
+    if (!window.echarts) await new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      const timer = setTimeout(() => { script.remove(); reject(new Error('Chart load timed out')); }, 15000);
+      script.src = '/echarts.js';
+      script.onload = () => { clearTimeout(timer); resolve(); };
+      script.onerror = () => { clearTimeout(timer); script.remove(); reject(new Error('Failed to load ECharts')); };
+      document.head.appendChild(script);
     });
-  });
+    const response = await fetch('/world.json', { signal: AbortSignal.timeout(15000) });
+    if (!response.ok) throw new Error('Failed to load world map');
+    const world = await response.json();
+    if (world.type !== 'FeatureCollection' || !Array.isArray(world.features)) throw new Error('Invalid world map');
+    window.echarts.registerMap('world', world);
+    worldMapNames = new Set(world.features.map(f => f.properties.name).filter(Boolean));
+    echartsLoaded = true;
+  })().catch(error => { echartsLoadingPromise = null; throw error; });
   return echartsLoadingPromise;
+}
+
+// GeoJSON uses English region names. Display labels still follow the UI language.
+function countryMapName(code){
+  if (!code || code === 'ZZ' || code === 'XX') return null;
+  const aliases = {
+    US:'United States', KR:'Korea', KP:'Dem. Rep. Korea', CZ:'Czech Rep.',
+    CD:'Dem. Rep. Congo', CG:'Congo', CI:"Côte d'Ivoire", LA:'Lao PDR',
+    BA:'Bosnia and Herz.', CF:'Central African Rep.', DO:'Dominican Rep.',
+    GQ:'Eq. Guinea', SS:'S. Sudan', SZ:'Swaziland', MK:'Macedonia',
+    CV:'Cape Verde', VA:'Vatican', PS:'Palestine', TR:'Turkey',
+    AG:'Antigua and Barb.', VC:'St. Vin. and Gren.', ST:'São Tomé and Principe',
+    FK:'Falkland Is.', FO:'Faeroe Is.', KY:'Cayman Is.', SB:'Solomon Is.',
+    TC:'Turks and Caicos Is.', MP:'N. Mariana Is.', VI:'U.S. Virgin Is.',
+    PF:'Fr. Polynesia', PM:'St. Pierre and Miquelon', AX:'Aland',
+  };
+  let name = aliases[code] || code;
+  if (!aliases[code]) {
+    try { name = new Intl.DisplayNames(['en'], { type:'region' }).of(code); } catch {}
+  }
+  return worldMapNames.has(name) ? name : null;
 }
 
 /** ISO 3166 国家代码 → 国名映射（用于 tooltip） */
@@ -2131,7 +2154,7 @@ const COUNTRY_NAMES = {
   'IS': '冰岛', 'LU': '卢森堡', 'MT': '马耳他', 'CY': '塞浦路斯', 'QA': '卡塔尔',
   'KW': '科威特', 'BH': '巴林', 'OM': '阿曼', 'JO': '约旦', 'LB': '黎巴嫩',
   'IR': '伊朗', 'IQ': '伊拉克', 'PK': '巴基斯坦', 'BD': '孟加拉国', 'LK': '斯里兰卡',
-  'NP': '尼泊尔', 'MM': '缅甸', 'KH': '柬埔寨', 'LA': '老挝', 'BD': '文莱',
+  'NP': '尼泊尔', 'MM': '缅甸', 'KH': '柬埔寨', 'LA': '老挝', 'BN': '文莱',
   'TT': '特立尼达和多巴哥', 'XX': '未知/未分类', 'ZZ': '未知/未分类',
   // English
   'US_EN': 'United States', 'CN_EN': 'China', 'JP_EN': 'Japan', 'KR_EN': 'South Korea',
@@ -2145,40 +2168,38 @@ function countryName(code){
 
 async function loadGlobal(){
   const days = globalDays || 30;
+  if (globeChart) { globeChart.dispose(); globeChart = null; }
+  if (globeResizeHandler) { window.removeEventListener('resize', globeResizeHandler); globeResizeHandler = null; }
   const v = $('#view');
-  v.innerHTML = `<div class="glass section" style="padding:24px"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px"><div><h2 style="margin:0;font-size:18px">${esc(t('globalTitle'))}</h2><div style="color:var(--text-3);font-size:12.5px;margin-top:4px">${esc(t('globalSub'))}</div></div><div style="display:flex;gap:8px;align-items:center"><span style="color:var(--text-3);font-size:13px">${esc(t('globalDays'))}</span><select id="g-days" class="sel">${[7,14,30,90,365].map(d=>`<option value="${d}"${d===days?' selected':''}>${d}${LANG==='zh'?' 天':'d'}</option>`).join('')}</select></div></div><div id="globe" style="width:100%;height:520px;border-radius:16px;background:linear-gradient(135deg,#0a0d20 0%,#0f1629 100%)"></div><div id="global-totals" style="display:flex;gap:16px;margin-top:16px"></div><div id="global-table-wrap" style="margin-top:16px"></div></div>`;
+  v.innerHTML = `<div class="glass section"><div class="section-title"><div><h2>${esc(t('globalTitle'))}</h2><div class="tip">${esc(t('globalSub'))}</div></div><div><label for="g-days">${esc(t('globalDays'))} </label><select id="g-days" class="sel">${[7,14,30,90,365].map(d=>`<option value="${d}"${d===days?' selected':''}>${d}${LANG==='zh'?' 天':'d'}</option>`).join('')}</select></div></div><div id="globe" style="width:100%;height:clamp(300px,55vh,520px);border-radius:8px;background:var(--sf)"></div><div id="global-totals" class="stat-grid" style="margin-top:16px"></div><div id="global-table-wrap" style="margin-top:16px"></div></div>`;
+  const container = $('#globe');
   $('#g-days').onchange = e => { globalDays = Number(e.target.value); loadGlobal(); };
-
-  const data = await api('/api/admin/global/stats?since_days=' + days);
+  let data;
+  try { data = await api('/api/admin/global/stats?since_days=' + days); }
+  catch(error) {
+    if (v.contains(container)) container.innerHTML = `<div class="empty">${esc(error.message || t('loadingErr'))}</div>`;
+    return;
+  }
+  if (!v.contains(container)) return; // Ignore results from a tab/range already replaced.
   const countries = data.countries || [];
-
-  // 概览统计
   $('#global-totals').innerHTML = `
-    <div class="stat-card glass" style="flex:1"><div class="label">${esc(t('globalTotalDownloads'))}</div><div class="value">${data.totals?.downloads ?? 0}</div></div>
-    <div class="stat-card glass" style="flex:1"><div class="label">${esc(t('globalTotalBytes'))}</div><div class="value">${fmtSize(data.totals?.bytes ?? 0)}</div></div>
-    <div class="stat-card glass" style="flex:1"><div class="label">${esc(t('globalCountries'))}</div><div class="value">${data.totals?.countries_seen ?? 0}</div></div>
-  `;
-
-  // 空数据提示
+    <div class="stat-card glass"><div class="label">${esc(t('globalTotalDownloads'))}</div><div class="value">${data.totals?.downloads ?? 0}</div></div>
+    <div class="stat-card glass"><div class="label">${esc(t('globalTotalBytes'))}</div><div class="value">${fmtSize(data.totals?.bytes ?? 0)}</div></div>
+    <div class="stat-card glass"><div class="label">${esc(t('globalCountries'))}</div><div class="value">${data.totals?.countries_seen ?? 0}</div></div>`;
   if (!countries.length) {
-    $('#globe').innerHTML = `<div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--text-3);font-size:14px">${esc(t('globalEmpty'))}</div>`;
-    $('#global-table-wrap').innerHTML = `<div class="empty"><div class="icon">🌍</div>${esc(t('globalEmpty'))}</div>`;
+    container.innerHTML = `<div class="empty">${esc(t('globalEmpty'))}</div>`;
+    $('#global-table-wrap').innerHTML = `<div class="empty">${esc(t('globalEmpty'))}</div>`;
     return;
   }
-
-  // 加载 ECharts
-  try {
-    await ensureECharts();
-  } catch (err) {
-    $('#globe').innerHTML = `<div style="height:100%;display:flex;align-items:center;justify-content:center;color:#ef4444;font-size:14px">Failed to load chart library</div>`;
+  const maxDownloads = Math.max(...countries.map(c => Number(c.downloads)), 1);
+  // Keep totals and rankings usable even if the map engine fails to load.
+  $('#global-table-wrap').innerHTML = `<h3>${LANG==='zh'?'国家/地区排行 · Top 20':'Top 20 Countries'}</h3><table class="tbl"><thead><tr><th>${esc(t('globalCountry'))}</th><th>${esc(t('globalDownloads'))}</th><th>${esc(t('globalBytes'))}</th><th>${esc(t('globalUniqueIps'))}</th><th>%</th></tr></thead><tbody>${countries.slice(0,20).map(c=>`<tr><td>${esc(countryName(c.country))} <span class="tip">${esc(c.country)}</span></td><td class="num">${c.downloads}</td><td class="num">${fmtSize(c.bytes)}</td><td class="num">${c.unique_ips}</td><td><div class="progress"><i style="width:${Math.round(c.downloads/maxDownloads*100)}%"></i></div></td></tr>`).join('')}</tbody></table>`;
+  try { await ensureECharts(); }
+  catch(error) {
+    if (v.contains(container)) container.innerHTML = `<div class="empty">${LANG==='zh'?'地图加载失败，统计与排行仍可用。':'Map unavailable. Totals and rankings remain available.'}</div>`;
     return;
   }
-
-  // 注册世界地图（echarts-gl 需要 world GeoJSON）
-  try { echarts.registerMap('world', window.WORLD_ATLAS || null); } catch(e) {}
-
-  // 准备 ECharts data：[{name: countryName, value: [lng, lat, downloads, bytes]}]
-  // 从 cf-ipcountry 的国家代码 → 大致经纬度（粗略定位）
+  if (!v.contains(container)) return;
   const approxGeo = {
     'US': [-97, 38], 'CN': [104, 35], 'JP': [138, 36], 'KR': [127, 36], 'GB': [-2, 54], 'DE': [10, 51],
     'FR': [2, 46], 'CA': [-106, 56], 'AU': [134, -25], 'BR': [-52, -15], 'IN': [78, 22], 'RU': [90, 62],
@@ -2193,115 +2214,41 @@ async function loadGlobal(){
     'IS': [-18, 64], 'LU': [6, 49], 'QA': [51, 25], 'KW': [47, 29], 'PK': [70, 30], 'BD': [90, 24],
     'LK': [81, 7], 'MM': [95, 21], 'KH': [105, 12], 'ZZ': [0, 0], 'XX': [0, 0],
   };
-  const maxDownloads = Math.max(...countries.map(c => c.downloads), 1);
-  const globeData = countries.map(c => {
-    const geo = approxGeo[c.country] || [0, 0];
-    return {
-      name: countryName(c.country),
-      value: [...geo, c.downloads, c.bytes],
-      downloads: c.downloads,
-      bytes: c.bytes,
-      unique_ips: c.unique_ips,
-      unique_files: c.unique_files,
-    };
-  });
-
-  const chart = echarts.init($('#globe'));
+  const mapData = countries.map(c => ({
+    name: countryMapName(c.country), countryLabel: countryName(c.country),
+    value: Number(c.downloads), downloads: Number(c.downloads),
+    bytes: Number(c.bytes), unique_ips: Number(c.unique_ips),
+  })).filter(c => c.name);
+  const hotspots = countries.filter(c => approxGeo[c.country] && c.country !== 'ZZ' && c.country !== 'XX').map(c => ({
+    name: countryName(c.country), countryLabel: countryName(c.country),
+    value: [...approxGeo[c.country], Number(c.downloads)], downloads: Number(c.downloads),
+    bytes: Number(c.bytes), unique_ips: Number(c.unique_ips),
+  }));
+  const style = getComputedStyle(document.documentElement);
+  const color = name => style.getPropertyValue(name).trim();
+  const chart = window.echarts.init(container);
   chart.setOption({
-    backgroundColor: 'transparent',
-    tooltip: {
-      trigger: 'item',
-      backgroundColor: 'rgba(15,22,41,0.92)',
-      borderColor: 'rgba(99,179,237,0.4)',
-      borderWidth: 1,
-      textStyle: { color: '#e2e8f0', fontSize: 13 },
-      formatter: (p) => {
-        if (p.componentType === 'series') {
-          const d = p.data;
-          return `<div style="font-weight:600;margin-bottom:6px">${d.name}</div>
-            <div>${esc(t('globalDownloads'))}: <b>${d.downloads}</b></div>
-            <div>${esc(t('globalBytes'))}: <b>${fmtSize(d.bytes)}</b></div>
-            <div>${esc(t('globalUniqueIps'))}: <b>${d.unique_ips}</b></div>`;
-        }
-        return p.name;
-      }
-    },
-    visualMap: {
-      min: 1, max: maxDownloads,
-      left: 16, bottom: 40,
-      text: [LANG==='zh'?'高':'High', LANG==='zh'?'低':'Low'],
-      calculable: true,
-      inRange: { color: ['#1e3a5f', '#2563eb', '#3b82f6', '#60a5fa', '#93c5fd', '#dbeafe'] },
-      textStyle: { color: '#94a3b8' }
-    },
-    series: [{
-      type: 'map',
-      map: 'world',
-      name: LANG==='zh'?'下载分布':'Downloads',
-      roam: true,
-      zoom: 1.2,
-      scaleLimit: { min: 0.8, max: 4 },
-      label: { show: false },
-      itemStyle: {
-        areaColor: '#1e293b',
-        borderColor: '#334155',
-        borderWidth: 0.5,
-      },
-      emphasis: {
-        label: { show: true, color: '#f1f5f9' },
-        itemStyle: { areaColor: '#0ea5e9', borderColor: '#38bdf8', borderWidth: 1 }
-      },
-      data: globeData.map(d => ({ name: d.name, value: d.downloads, ...d })),
-    },{
-      type: 'scatter',
-      coordinateSystem: 'geo',
-      name: LANG==='zh'?'热点':'Hotspots',
-      symbolSize: (val) => Math.max(4, Math.min(30, Math.sqrt(val[2] / maxDownloads) * 30)),
-      itemStyle: { color: '#0ea5e9', shadowBlur: 10, shadowColor: '#0ea5e9' },
-      data: globeData.map(d => ({ name: d.name, value: d.value, ...d })),
-    }],
-    geo: {
-      map: 'world',
-      roam: true,
-      zoom: 1.2,
-      scaleLimit: { min: 0.8, max: 4 },
-      itemStyle: { areaColor: '#1e293b', borderColor: '#334155' },
-      emphasis: { itemStyle: { areaColor: '#0ea5e9' } },
-    }
+    backgroundColor:'transparent',
+    tooltip:{ trigger:'item', backgroundColor:color('--glass'), borderColor:color('--stroke'), textStyle:{color:color('--text')}, formatter:p=>{
+      const d = p.data;
+      if (!d) return esc(p.name);
+      return `<b>${esc(d.countryLabel || d.name)}</b><br>${esc(t('globalDownloads'))}: ${d.downloads}<br>${esc(t('globalBytes'))}: ${fmtSize(d.bytes)}<br>${esc(t('globalUniqueIps'))}: ${d.unique_ips}`;
+    }},
+    visualMap:{ min:0, max:maxDownloads, seriesIndex:0, dimension:0, left:12, bottom:12,
+      text:[LANG==='zh'?'高':'High',LANG==='zh'?'低':'Low'], calculable:true,
+      inRange:{color:[color('--sf'),color('--accent')]}, textStyle:{color:color('--text-2')} },
+    geo:{ map:'world', roam:true, zoom:1.1, scaleLimit:{min:.8,max:4},
+      itemStyle:{areaColor:color('--sf'),borderColor:color('--stroke-strong')},
+      emphasis:{label:{show:false},itemStyle:{areaColor:color('--accent-soft')}} },
+    series:[
+      {type:'map',map:'world',geoIndex:0,name:LANG==='zh'?'下载分布':'Downloads',data:mapData},
+      {type:'scatter',coordinateSystem:'geo',name:LANG==='zh'?'热点':'Hotspots',data:hotspots,
+        symbolSize:v=>Math.max(5,Math.min(28,Math.sqrt(v[2]/maxDownloads)*28)),itemStyle:{color:color('--accent')}},
+    ],
   });
-  // resize handler
   globeChart = chart;
-  window.addEventListener('resize', () => chart.resize());
-
-  // 国家排行表格
-  const rows = countries.slice(0, 20).map(c => {
-    const pct = Math.round((c.downloads / maxDownloads) * 100);
-    return `<tr>
-      <td>${countryName(c.country)} <span style="color:var(--text-3);font-size:11px">${c.country}</span></td>
-      <td class="num">${c.downloads}</td>
-      <td class="num">${fmtSize(c.bytes)}</td>
-      <td class="num">${c.unique_ips}</td>
-      <td><div class="progress"><i style="width:${pct}%;background:linear-gradient(90deg,#2563eb,#60a5fa)"></i></div></td>
-    </tr>`;
-  }).join('');
-  $('#global-table-wrap').innerHTML = `
-    <div class="glass section" style="padding:20px">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-        <h3 style="margin:0;font-size:14px;color:var(--text-2)">${LANG==='zh'?'国家/地区排行 · Top 20':'Top 20 Countries'}</h3>
-        <span style="color:var(--text-3);font-size:12px">${esc(t('globalGeoSource'))}</span>
-      </div>
-      <table class="tbl">
-        <thead><tr>
-          <th>${esc(t('globalCountry'))}</th>
-          <th>${esc(t('globalDownloads'))}</th>
-          <th>${esc(t('globalBytes'))}</th>
-          <th>${esc(t('globalUniqueIps'))}</th>
-          <th>%</th>
-        </tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
-    </div>
-  `;
+  globeResizeHandler = () => { if ($('#globe') === container) chart.resize(); };
+  window.addEventListener('resize', globeResizeHandler);
 }
 
 /* ═══════════ 激活码管理 ═══════════ */

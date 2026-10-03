@@ -1,3 +1,5 @@
+import worldGeoJSON from "../assets/world.geojson";
+import echartsJS from "../assets/echarts.bundle.txt";
 import logoSVG from "../assets/logo.svg";
 import adminHTML from "../public/admin.html";
 import shareHTML from "../public/share.html";
@@ -46,6 +48,21 @@ export function json(body: unknown, init?: ResponseInit): Response {
   if (!headers.has("content-type")) headers.set("content-type", "application/json;charset=utf-8");
   addSecurityHeaders(headers);
   return new Response(JSON.stringify(body), { ...init, headers });
+}
+
+/** Locally bundled map assets: no CDN or database needed. */
+export function serveGlobalAsset(req: Request, path: string): Response {
+  if (req.method !== "GET" && req.method !== "HEAD") {
+    return new Response(null, { status: 405, headers: { Allow: "GET, HEAD" } });
+  }
+  const isMap = path === "/world.json";
+  return new Response(req.method === "HEAD" ? null : (isMap ? worldGeoJSON : echartsJS), {
+    headers: {
+      "content-type": isMap ? "application/geo+json;charset=utf-8" : "application/javascript;charset=utf-8",
+      "cache-control": "public, max-age=3600",
+      "x-content-type-options": "nosniff",
+    },
+  });
 }
 
 export function serveLogo(req: Request): Response {

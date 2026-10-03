@@ -40,7 +40,7 @@
 | 下载统计 | 下载日志、每日流量与国家分布；Analytics Engine 可选 |
 | 界面 | 中文/英文、响应式布局、管理后台浅色/深色主题 |
 
-生产代码使用 Workers 与 Web Crypto 原生 API，无 npm 运行时依赖。此版本在上游基础上调整前端样式与项目名称，业务逻辑沿用上游实现；已有问题的审查结果不代表已在此版本修复。
+生产代码使用 Workers 与 Web Crypto 原生 API，无 npm 运行时依赖。此版本在上游基础上调整前端样式与项目名称，并修复后台脚本、分享下载、全球分布、流量统计和激活码预扣费。其他已审查的问题仍需逐项处理。
 
 ## 快速开始
 
@@ -108,7 +108,20 @@ npm run deploy -- --config wrangler.jsonc
 - 按实际启用的功能检查 `/market`、直链、OAuth、Turnstile 与 WebDAV。
 - 使用 `npm run tail -- --config wrangler.jsonc` 查看线上 Worker 日志。
 
-此版本没有 `npm run check` 或自动化回归测试脚本。Wrangler 能完成打包并不意味着浏览器内嵌脚本和业务流程均无错误。
+使用 Node.js 24，在安装依赖后执行本次修复的回归检查：
+
+```bash
+node scripts/check-downloads.mjs
+node scripts/check-global.mjs
+```
+
+检查使用内存 SQLite、模拟存储和实际图表引擎，不访问 Cloudflare 或线上数据。项目尚未提供 `npm run check`；完整 TypeScript 检查仍有已知的存储类型问题。
+
+### 下载扣费与统计
+
+通过鉴权并确认文件存在后，D1 事务在返回文件之前同时预留下载次数与激活码额度。余额不足不返回文件；失败鉴权、文件不存在、无效 Range 和 HEAD 不扣费。Range 按本次请求范围预扣；下载中断不会自动退款。
+
+流量按服务端响应长度异步记录，按 UTC 日期汇总，并在跨月首次写入时重置月累计。全球分布使用下载日志中的国家代码；旧记录缺少国家信息时保留为未知，不自动推测。地图与图表脚本由本站提供。
 
 ## 项目结构
 

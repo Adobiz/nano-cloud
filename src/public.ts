@@ -1,12 +1,13 @@
 import type { Env, ShareWithFile, DirectLinkWithFile } from "./types";
 import { getSettings, addTraffic } from "./settings";
+import { reserveDownload } from "./download-accounting";
 import { parseUA } from "./ua";
 import { clientIp, isAdminWhitelisted } from "./auth";
-import { findCodeByString, checkCodeUsable, activateCodeIfNeeded, deductQuota, formatCodeStatus } from "./codes";
+import { findCodeByString, checkCodeUsable, formatCodeStatus } from "./codes";
 import { errorPage, json } from "./pages";
 import { hmacHex, sha256Hex, randomHex, safeEqual, decryptSecret } from "./crypto";
 import { verifyOAuthSession } from "./oauth";
-import { createStorageProvider, type StorageProvider } from "./storage";
+import { createStorageProvider, type StorageProvider, type StorageObject } from "./storage";
 
 /** 懒加载 StorageProvider —— 和 admin.ts 类似 */
 let _storagePromise: Promise<StorageProvider> | null = null;
@@ -304,7 +305,7 @@ export async function handleDownload(
 ): Promise<Response> {
   const ip = clientIp(req);
   const ua = req.headers.get("user-agent") ?? "";
-  const country = req.headers.get("cf-ipcountry") ?? "";
+  const country = String(req.headers.get("cf-ipcountry") || req.cf?.country || "").toUpperCase();
   const settings = await getSettings(env);
 
   const urlCode = new URL(req.url).searchParams.get("code");
@@ -317,6 +318,11 @@ export async function handleDownload(
       .bind(ip).first<{ reason: string | null; expires_at: number | null }>(),
     getShare(env, token),
   ]);
+
+  if (activationCode && !codeRow) {
+    return errorPage(req, 403, { zh: "激活码无效", en: "Invalid Activation Code" },
+      { zh: "该激活码不存在或格式不正确。", en: "Activation code not found or invalid." });
+  }
 
   if (activationCode && codeRow) {
     const check = checkCodeUsable(codeRow as any);
@@ -331,7 +337,6 @@ export async function handleDownload(
         { zh: check.message || reason || "该激活码不可用", en: check.message || "This activation code is not available" },
         { siteTitle: settings.siteTitle });
     }
-    activateCodeIfNeeded(env, codeRow!).catch(() => {});
   }
 
   if (ban) {
@@ -352,14 +357,7 @@ export async function handleDownload(
   if (row.max_downloads && row.download_count >= row.max_downloads) return errorPage(req, 410, { zh: "下载次数已达上限", en: "Download Limit Reached" },
     { zh: `该资源允许下载 ${row.max_downloads} 次，名额已用完。`, en: `Download limit (${row.max_downloads}) reached.` });
 
-  if (row.max_downloads) {
-    const r = await env.db.prepare(
-      `UPDATE shares SET download_count = download_count + 1 WHERE id = ?1 AND download_count < ?2`
-    ).bind(token, row.max_downloads).run();
-    if ((r.meta.changes ?? 0) === 0)
-      return errorPage(req, 410, { zh: "下载次数已达上限", en: "Download Limit Reached" },
-        { zh: `名额已用完。`, en: `Quota used up.` });
-  }
+
 
   if (row.password_hash && !(await verifyShareToken(env, token, new URL(req.url).search))) {
     return errorPage(req, 403, { zh: "需要访问密码", en: "Password Required" },
@@ -447,7 +445,7 @@ export async function handleDirectDownload(
 ): Promise<Response> {
   const ip = clientIp(req);
   const ua = req.headers.get("user-agent") ?? "";
-  const country = req.headers.get("cf-ipcountry") ?? "";
+  const country = String(req.headers.get("cf-ipcountry") || req.cf?.country || "").toUpperCase();
   const settings = await getSettings(env);
 
   const urlCode = new URL(req.url).searchParams.get("code");
@@ -461,6 +459,11 @@ export async function handleDirectDownload(
     getDirectLink(env, token),
   ]);
 
+  if (activationCode && !codeRow) {
+    return errorPage(req, 403, { zh: "激活码无效", en: "Invalid Activation Code" },
+      { zh: "该激活码不存在或格式不正确。", en: "Activation code not found or invalid." });
+  }
+
   if (activationCode && codeRow) {
     const check = checkCodeUsable(codeRow as any);
     if (!check.ok) {
@@ -469,7 +472,6 @@ export async function handleDirectDownload(
         { zh: check.message || check.reason || "该激活码不可用", en: check.message || "This activation code is not available" },
         { siteTitle: settings.siteTitle });
     }
-    activateCodeIfNeeded(env, codeRow!).catch(() => {});
   }
 
   if (ban) {
@@ -490,14 +492,7 @@ export async function handleDirectDownload(
   if (row.max_downloads && row.download_count >= row.max_downloads) return errorPage(req, 410, { zh: "下载次数已达上限", en: "Download Limit Reached" },
     { zh: `名额已用完。`, en: `Quota used up.` });
 
-  if (row.max_downloads) {
-    const r = await env.db.prepare(
-      `UPDATE direct_links SET download_count = download_count + 1 WHERE id = ?1 AND download_count < ?2`
-    ).bind(token, row.max_downloads).run();
-    if ((r.meta.changes ?? 0) === 0)
-      return errorPage(req, 410, { zh: "下载次数已达上限", en: "Download Limit Reached" },
-        { zh: `名额已用完。`, en: `Quota used up.` });
-  }
+
 
   {
     const whitelisted = isAdminWhitelisted(ip, settings.adminIps);
@@ -559,7 +554,7 @@ async function streamFile(
 ): Promise<Response> {
   const ip = clientIp(req);
   const ua = req.headers.get("user-agent") ?? "";
-  const country = req.headers.get("cf-ipcountry") ?? "";
+  const country = String(req.headers.get("cf-ipcountry") || req.cf?.country || "").toUpperCase();
   const settings = await getSettings(env);
 
   const urlCode = new URL(req.url).searchParams.get("code");
@@ -567,11 +562,16 @@ async function streamFile(
   const activationCode = (urlCode || headerCode || "").trim().toUpperCase() || null;
   const codeRow = activationCode ? await findCodeByString(env, activationCode) : null;
 
-  const range = parseRange(req.headers.get("range"), row.size);
-  let obj;
+  const isHead = req.method === "HEAD";
+  const rangeHeader = isHead ? null : req.headers.get("range");
+  const range = parseRange(rangeHeader, row.size);
+  if (rangeHeader && !range) {
+    return new Response(null, { status: 416, headers: { "content-range": `bytes */${row.size}` } });
+  }
+  let obj: (Partial<StorageObject> & { size: number; contentType: string }) | null;
   try {
     const st = await storage(env);
-    obj = await st.get(row.key, range ? { offset: range.offset, length: range.length } : undefined);
+    obj = isHead ? await st.head(row.key) : await st.get(row.key, range ? { offset: range.offset, length: range.length } : undefined);
   } catch (err: any) {
     console.error("[download] storage error:", err);
     return errorPage(req, 502, { zh: "存储服务错误", en: "Storage Error" },
@@ -583,7 +583,7 @@ async function streamFile(
 
   const headers = new Headers();
   headers.set("content-type", obj.contentType);
-  headers.set("etag", obj.etag);
+  if (obj.etag) headers.set("etag", obj.etag);
   headers.set("accept-ranges", "bytes");
   headers.set("cache-control", "no-store");
   const displayName = row.download_name || row.name;
@@ -596,7 +596,23 @@ async function streamFile(
     headers.set("content-range", `bytes ${range.offset}-${range.offset + servedLen - 1}/${row.size}`);
   }
 
-  // 后台记录
+  // HEAD only reads metadata. Reserve the link allowance and activation quota
+  // atomically before returning any file body; failed authorization never pays.
+  if (isHead) return new Response(null, { headers });
+  const body = obj.body;
+  if (!body) return errorPage(req, 502,
+    { zh: "文件内容不可读取", en: "Invalid Storage Response" },
+    { zh: "存储后端未返回文件内容。", en: "Storage returned no file body." });
+  const reservation = await reserveDownload(env, kind, token, codeRow, servedLen);
+  if (!reservation.ok) {
+    await body.cancel().catch(() => {});
+    return errorPage(req, reservation.reason === "quota" ? 403 : 410,
+      { zh: "下载不可用", en: "Download Unavailable" },
+      { zh: reservation.reason === "quota" ? "激活码剩余额度不足或已失效。" : "链接已失效或下载名额已用完。",
+        en: "Link unavailable or insufficient activation quota." });
+  }
+
+  // Logs and traffic totals run in the background; quota has already been paid.
   const bytes = servedLen;
   const codeId = codeRow ? codeRow.code : null;
   ctx.waitUntil(
@@ -627,14 +643,9 @@ async function streamFile(
         .bind(token, row.file_id, row.name, ip, ua.slice(0, 500), browser, os, country, bytes, Date.now(), codeId)
         .run();
       await addTraffic(env, bytes);
-      if (codeRow) {
-        const dr = await deductQuota(env, codeRow, bytes);
-        if (!dr.ok) {
-          console.warn(`[code-decline] code=${codeRow.code} reason=${dr.reason} msg=${dr.message}`);
-        }
-      }
+
     })()
   );
 
-  return new Response(obj.body, { status: range ? 206 : 200, headers });
+  return new Response(body, { status: range ? 206 : 200, headers });
 }
