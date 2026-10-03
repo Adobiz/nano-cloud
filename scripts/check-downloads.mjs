@@ -130,6 +130,20 @@ test('password failure, missing objects and invalid ranges never activate or pay
   assert.equal(f.count(),0);assert.equal(f.codeRow().used_bytes,0);assert.equal(f.codeRow().status,'unused');
 });
 
+test('share-page name matches the download filename, with original-name fallback',async()=>{
+  const f=await fixture();
+  for (const customName of ['指定的名称.zip', null]) {
+    f.sqlite.prepare('UPDATE shares SET download_name=?').run(customName);
+    const expected=customName || 'file.txt';
+    const info=await f.api.handleShareInfo(f.request('/s/share/info'),f.env,'share');
+    assert.equal((await info.json()).name,expected);
+    const download=await f.api.handleDownload(f.request('/s/share/download',{method:'HEAD'}),f.env,f.ctx,'share');
+    assert.equal(download.status,200);
+    assert.equal(download.headers.get('content-disposition'),`attachment; filename*=UTF-8''${encodeURIComponent(expected)}`);
+  }
+  assert.equal(f.sqlite.prepare('SELECT name FROM files').get().name,'file.txt');
+});
+
 test('HEAD reads metadata without quota, activation, counts or logs',async()=>{
   const f=await fixture();const code=f.code();
   const response=await f.api.handleDownload(f.request('/s/share/download?code='+code.code,{method:'HEAD'}),f.env,f.ctx,'share');

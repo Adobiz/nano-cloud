@@ -203,7 +203,7 @@ export async function handleShareInfo(req: Request, env: Env, token: string): Pr
 
   return json({
     status,
-    name: row.name,
+    name: row.download_name || row.name,
     size: row.size,
     mime: row.mime,
     downloads: row.download_count,

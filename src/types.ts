@@ -17,6 +17,7 @@ export interface Env {
 }
 
 export interface ShareRow {
+  download_name?: string | null;
   /** 分享链接 token（/s/:id） */
   id: string;
   file_id: string;

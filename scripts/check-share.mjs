@@ -32,6 +32,13 @@ function fixture(initialCode=null) {
   };
 }
 
+test('share page renders the supplied display name safely and uses its extension',()=>{
+  const f=fixture();f.render({...info,name:'指定<名称>.zip'});
+  assert.match(f.ids.get('app').innerHTML,/<h1>指定&lt;名称&gt;\.zip<\/h1>/);
+  assert.match(f.ids.get('app').innerHTML,/>ZIP<\/span>/);
+  assert.doesNotMatch(f.ids.get('app').innerHTML,/file\.txt/);
+});
+
 test('share page restores activation-code entry, badge and configured visibility/position',()=>{
   assert.match(html,/id="code-float"/);assert.match(html,/id="code-float-badge"/);
   const f=fixture('R2PAN-TEST'); f.render();
