@@ -122,14 +122,9 @@ export async function verifyOAuthState(
   state: string
 ): Promise<{ ok: boolean; provider_id?: string; redirect_uri?: string }> {
   if (!state) return { ok: false };
-  const row = await env.db
-    .prepare("SELECT provider_id, redirect_uri, expires_at FROM oauth_states WHERE state = ?1")
-    .bind(state)
-    .first<{ provider_id: string; redirect_uri: string; expires_at: number }>();
-  if (!row) return { ok: false };
-  // 一次性消费：立刻删除
-  await env.db.prepare("DELETE FROM oauth_states WHERE state = ?1").bind(state).run();
-  if (row.expires_at < Date.now()) return { ok: false };
+  const row = await env.db.prepare("DELETE FROM oauth_states WHERE state = ?1 RETURNING provider_id, redirect_uri, expires_at")
+    .bind(state).first<{provider_id:string;redirect_uri:string;expires_at:number}>();
+  if (!row || row.expires_at <= Date.now()) return {ok:false};
   return { ok: true, provider_id: row.provider_id, redirect_uri: row.redirect_uri };
 }
 
@@ -151,7 +146,9 @@ export function buildAuthorizeUrl(
     // 某些 Provider 需要 prompt / access_type / include_granted_scopes
   });
   if (provider.id === "google") params.set("access_type", "offline");
-  return `${provider.authorize_url}?${params.toString()}`;
+  const target = new URL(provider.authorize_url);
+  params.forEach((value, key) => target.searchParams.set(key, value));
+  return target.toString();
 }
 
 /* ═════════── code → access_token ────────────────────── */
@@ -211,6 +208,7 @@ export async function fetchUserInfo(
     const resp = await fetch(provider.userinfo_url, {
       headers: {
         authorization: `Bearer ${accessToken}`,
+        "user-agent": "nano-cloud",
         accept: "application/json",
       },
     });
@@ -244,7 +242,7 @@ export async function fetchUserInfo(
  */
 
 export const OAUTH_COOKIE = "cd_oauth";
-const OAUTH_TTL_MS = 60 * 3600_000; // 1 小时
+const OAUTH_TTL_MS = 3600_000; // 1 小时
 
 export async function signOAuthSession(
   env: Env,
@@ -253,7 +251,8 @@ export async function signOAuthSession(
 ): Promise<{ cookie: string; secure: boolean; expiresAt: number }> {
   const exp = Date.now() + OAUTH_TTL_MS;
   const sig = await hmacB64url(env.admin, `${providerId}:${userId}:${exp}`);
-  const value = `${providerId}.${userId}.${exp}.${sig}`;
+  const encode = (value: string) => encodeURIComponent(value).replace(/\./g, "%2E");
+  const value = `${encode(providerId)}.${encode(userId)}.${exp}.${sig}`;
   const secure = true; // 必须在 https 下；本地 dev 用 http 时需降级由调用方判断
   return { cookie: `${OAUTH_COOKIE}=${value}`, secure, expiresAt: exp };
 }
@@ -263,16 +262,21 @@ export async function verifyOAuthSession(
   cookieHeader: string | null
 ): Promise<{ ok: boolean; providerId: string; userId: string }> {
   if (!cookieHeader) return { ok: false, providerId: "", userId: "" };
-  const match = new RegExp(`${OAUTH_COOKIE}=([^;]+)`).exec(cookieHeader);
+  const match = new RegExp(`(?:^|;\\s*)${OAUTH_COOKIE}=([^;]+)`).exec(cookieHeader);
   if (!match) return { ok: false, providerId: "", userId: "" };
   const raw = match[1];
   const parts = raw.split(".");
   if (parts.length !== 4) return { ok: false, providerId: "", userId: "" };
-  const [providerId, userId, expStr, sig] = parts;
+  const [providerRaw, userRaw, expStr, sig] = parts;
+  let providerId: string, userId: string;
+  try {providerId = decodeURIComponent(providerRaw);userId = decodeURIComponent(userRaw);}
+  catch {return {ok:false,providerId:"",userId:""};}
   const exp = Number(expStr);
-  if (!Number.isFinite(exp) || exp < Date.now()) return { ok: false, providerId: "", userId: "" };
+  if (!Number.isFinite(exp) || exp <= Date.now() || exp > Date.now() + OAUTH_TTL_MS) return { ok: false, providerId: "", userId: "" };
   const want = await hmacB64url(env.admin, `${providerId}:${userId}:${exp}`);
   if (!safeEqual(sig, want)) return { ok: false, providerId: "", userId: "" };
+  const provider = await env.db.prepare("SELECT id FROM oauth_providers WHERE id = ?1 AND enabled = 1").bind(providerId).first();
+  if (!provider) return {ok:false,providerId:"",userId:""};
   return { ok: true, providerId, userId };
 }
 

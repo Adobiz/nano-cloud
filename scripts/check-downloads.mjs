@@ -15,8 +15,8 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 const dir = mkdtempSync(join(tmpdir(), 'nano-cloud-downloads-'));
 process.on('exit', () => rmSync(dir, { recursive: true, force: true }));
 buildSync({
-  stdin: { contents: ['db', 'public', 'codes', 'settings', 'download-accounting', 'storage', 'webdav']
-    .map(name => `export * from './src/${name}.ts';`).join('\n'), resolveDir: root },
+  stdin: { contents: ['db', 'public', 'codes', 'settings', 'download-accounting', 'storage', 'webdav', 'oauth', 'oauth_handlers', 'auth', 'admin', 'range', 'crypto']
+    .map(name => `export * from './src/${name}.ts';`).join('\n') + "\nexport {default as worker} from './src/index.ts';", resolveDir: root },
   outfile: join(dir, 'backend.mjs'), bundle: true, format: 'esm', platform: 'node',
   loader: { '.html': 'text', '.svg': 'text', '.geojson': 'text', '.txt': 'text' },
 });
@@ -297,7 +297,7 @@ test('S3 uses a valid SigV4 signature for binary slices, virtual hosts, Range an
     requests.push({url:u,headers,opts});
     if(opts.method==='HEAD') return new Response(null,{headers:{'content-length':'3'}});
     if(u.search) return new Response('<ListBucketResult><IsTruncated>false</IsTruncated></ListBucketResult>');
-    return new Response(new Uint8Array([255,0,128]),{headers:{'content-length':'3'}});
+    return new Response(new Uint8Array([255,0,128]),{status:headers.has('range')?206:200,headers:{'content-length':'3',...(headers.has('range')?{'content-range':'bytes 0-2/3'}:{})}});
   };
   try {
     const p=f.api.createS3Provider(cfg),slice=new Uint8Array([9,255,0,128,8]).subarray(1,4);
@@ -335,4 +335,244 @@ test('WebDAV COPY to a separate permitted path preserves the source and copies i
   assert.equal(r.status,201); assert.equal(f.objects.has('object'),true);
   const row=f.sqlite.prepare("SELECT * FROM files WHERE path='/safe/copied.txt'").get();
   assert.equal(row.size,10);assert.deepEqual([...f.objects.get(row.key)],[1,2,3,4,5,6,7,8,9,10]);
+});
+
+test('concurrent normal downloads cannot exceed monthly quota and record usage before return',async()=>{
+  const f=await fixture({traffic_limit_bytes:'15'});
+  const responses=await Promise.all(Array.from({length:6},()=>f.api.handleDownload(f.request(),f.env,f.ctx,'share')));
+  assert.equal(responses.filter(r=>r.status===200).length,1);
+  assert.equal(responses.filter(r=>r.status===503).length,5);
+  assert.equal(f.count(),1);assert.equal((await f.api.getSettings(f.env)).trafficUsedBytes,10);
+  assert.equal(f.sqlite.prepare('SELECT COUNT(*) AS n FROM download_logs').get().n,1);
+  await f.settle();assert.equal((await f.api.getSettings(f.env)).trafficUsedBytes,10);
+});
+
+test('concurrent normal downloads cannot bypass the IP download count',async()=>{
+  const f=await fixture({max_downloads_per_ip:'1',auto_ban:'0'});
+  const responses=await Promise.all(Array.from({length:6},()=>f.api.handleDownload(f.request(),f.env,f.ctx,'share')));
+  assert.equal(responses.filter(r=>r.status===200).length,1);
+  assert.equal(responses.filter(r=>r.status===403).length,5);
+  assert.equal(f.count(),1);assert.equal(f.sqlite.prepare('SELECT COUNT(*) AS n FROM download_logs').get().n,1);await f.settle();
+});
+
+test('storage changes apply to public and DAV reads without reloading the Worker',async()=>{
+  const f=await davFixture();const first=await f.api.handleDownload(f.request(),f.env,f.ctx,'share');assert.equal(first.status,200);await first.arrayBuffer();
+  assert.equal((await f.dav('HEAD','/safe/file.txt')).status,200);
+  await f.api.updateSettings(f.env,{storage_provider:'s3',s3_endpoint:'https://storage.test',s3_bucket:'bucket',s3_access_key_id:'testing',s3_secret_key_cipher:await f.api.encryptSecret('secret',f.env.admin)});
+  const original=globalThis.fetch;let reads=0;
+  globalThis.fetch=async()=>{reads++;return new Response(new Uint8Array([5,4,3]),{headers:{'content-length':'3'}});};
+  try {
+    const next=await f.api.handleDownload(f.request(),f.env,f.ctx,'share');assert.equal(next.status,200);assert.deepEqual([...new Uint8Array(await next.arrayBuffer())],[5,4,3]);
+    assert.equal((await f.dav('HEAD','/safe/file.txt')).status,200);assert.equal(reads,2);await f.settle();
+    await f.api.updateSettings(f.env,{s3_secret_key_cipher:''});
+    await assert.rejects(f.api.createStorageProvider(f.env,await f.api.getSettings(f.env)),/secret/);
+  } finally {globalThis.fetch=original;}
+});
+
+test('S3 streaming upload records HEAD size and listing decodes XML/continuation tokens',async()=>{
+  const f=await fixture();const p=f.api.createS3Provider({endpoint:'https://storage.test',region:'auto',bucket:'bucket',accessKeyId:'key',secretAccessKey:'secret'});
+  const original=globalThis.fetch;const urls=[];
+  globalThis.fetch=async(url,opts)=>{
+    urls.push(new URL(url));
+    if(opts.method==='HEAD')return new Response(null,{headers:{'content-length':'10'}});
+    if(opts.method==='PUT')return new Response(null,{status:200});
+    return new Response('<ListBucketResult><Contents><Key>a&amp;b.txt</Key><Size>10</Size></Contents><IsTruncated>true</IsTruncated><NextContinuationToken>abc&amp;+</NextContinuationToken></ListBucketResult>');
+  };
+  try {
+    assert.equal((await p.put('file',new ReadableStream({start(c){c.enqueue(new Uint8Array(10));c.close();}}),{})).size,10);
+    const page=await p.list({marker:'opaque+/='});assert.equal(page.entries[0].key,'a&b.txt');assert.equal(page.nextMarker,'abc&+');
+    assert.equal(urls.at(-1).searchParams.get('continuation-token'),'opaque+/=');assert.equal(urls.at(-1).searchParams.has('start-after'),false);
+  } finally {globalThis.fetch=original;}
+});
+
+test('remote storage refusing a range fails before any quota or allowance is spent',async()=>{
+  const f=await fixture();await f.api.updateSettings(f.env,{storage_provider:'s3',s3_endpoint:'https://storage.test',s3_bucket:'bucket',s3_access_key_id:'key',s3_secret_key_cipher:await f.api.encryptSecret('secret',f.env.admin)});
+  const code=f.code();const original=globalThis.fetch;
+  globalThis.fetch=async()=>new Response(new Uint8Array(10),{headers:{'content-length':'10'}});
+  const originalError=console.error;console.error=()=>{};
+  try {
+    const r=await f.api.handleDownload(f.request('/s/share/download?code='+code.code,{headers:{range:'bytes=0-2'}}),f.env,f.ctx,'share');
+    assert.equal(r.status,502);assert.equal(f.codeRow().used_bytes,0);assert.equal(f.count(),0);
+  } finally {globalThis.fetch=original;console.error=originalError;}
+});
+
+test('DAV PROPFIND handles legacy admin paths, empty subdirectories, URI encoding and file namespace',async()=>{
+  const f=await davFixture();f.sqlite.prepare("UPDATE files SET name='报告 &.txt',path='/safe'").run();
+  const r=await f.dav('PROPFIND','/safe',{depth:'infinity'});assert.equal(r.status,207);
+  const xml=await r.text();assert.match(xml,/xmlns="DAV:"/);assert.match(xml,/%E6%8A%A5%E5%91%8A%20%26\.txt<\/href>/);assert.match(xml,/\/safe\/sub\/nested\//);
+  assert.equal((xml.match(/报告 &amp;\.txt/g)||[]).length,1);
+  const file=await f.dav('PROPFIND','/safe/'+encodeURIComponent('报告 &.txt'),{depth:'0'});assert.equal(file.status,207);assert.doesNotMatch(await file.text(),/<collection\/>/);
+  assert.equal((await f.dav('GET','/safe/'+encodeURIComponent('报告 &.txt'))).status,200);
+  assert.equal((await f.dav('PROPFIND','/safe',{depth:'invalid'})).status,400);
+});
+
+test('DAV directory MOVE and DELETE include files stored with a parent-directory path',async()=>{
+  const f=await davFixture();f.sqlite.prepare("UPDATE files SET path='/safe/sub'").run();
+  assert.equal((await f.dav('MOVE','/safe/sub',{destination:'https://test.invalid/webdav/safe/moved'})).status,201);
+  assert.equal(f.sqlite.prepare("SELECT path FROM files WHERE id='file'").get().path,'/safe/moved/file.txt');
+  assert.equal((await f.dav('DELETE','/safe/moved')).status,204);assert.equal(f.sqlite.prepare('SELECT COUNT(*) AS n FROM files').get().n,0);
+});
+
+test('DAV suffix ranges clamp to file length and malformed ranges return 416',async()=>{
+  const f=await davFixture();
+  const r=await f.dav('GET','/safe/file.txt',{range:'bytes=-100'});assert.equal(r.status,206);assert.equal(r.headers.get('content-range'),'bytes 0-9/10');assert.equal((await r.arrayBuffer()).byteLength,10);
+  for(const range of ['bytes=-0','bytes=-','bytes=20-','bytes=5-2','garbage','bytes=9007199254740992-']) assert.equal((await f.dav('GET','/safe/file.txt',{range})).status,416,range);
+});
+
+test('failed DAV overwrite transactions preserve the previous file and remove the staged upload',async()=>{
+  const f=await davFixture();const batch=f.env.db.batch;
+  f.env.db.batch=async statements=>{throw new Error('simulated write failure');};
+  const r=await f.api.handleWebDAV(f.request('/webdav/safe/file.txt',{method:'PUT',headers:{authorization:'Basic '+btoa('tester:password')},body:new Uint8Array([9])}),f.env,f.ctx);
+  assert.equal(r.status,502);assert.equal(f.objects.size,1);assert.equal(f.objects.has('object'),true);
+  assert.equal(f.sqlite.prepare('SELECT key FROM files').get().key,'object');f.env.db.batch=batch;
+});
+
+async function adminCall(f,path,opts={}){
+  const cookie=(await f.api.createSession(f.env)).split(';')[0];
+  return f.api.handleAdminApi(f.request(path,{...opts,headers:{cookie,'content-type':'application/json',...opts.headers}}),f.env,f.ctx,path.split('?')[0]);
+}
+
+test('share cleanup protects direct-only files, respects unlimited shares and chunks orphan deletes',async()=>{
+  const f=await fixture();f.sqlite.prepare("UPDATE shares SET revoked=1").run();
+  for(let i=0;i<150;i++)f.sqlite.prepare('INSERT INTO files(id,key,name,size,mime,uploaded_at) VALUES(?,?,?,?,?,?)').run('orphan'+i,'missing'+i,'orphan'+i,0,'text/plain',Date.now());
+  const prepare=f.env.db.prepare;f.env.db.prepare=sql=>{const statement=prepare(sql),bind=statement.bind;statement.bind=function(...values){assert.ok(values.length<=100,'D1 bound parameter limit');return bind.apply(this,values);};return statement;};
+  const r=await adminCall(f,'/api/admin/shares/cleanup',{method:'POST'});assert.equal(r.status,200);
+  assert.equal((await r.json()).deleted_orphan_files,150);await f.settle();assert.equal(f.objects.has('object'),true);assert.equal(f.sqlite.prepare('SELECT COUNT(*) AS n FROM files').get().n,1);
+  f.sqlite.prepare("INSERT INTO shares(id,file_id,created_at,max_downloads) VALUES('unlimited','file',?,0)").run(Date.now());
+  assert.equal((await adminCall(f,'/api/admin/shares/cleanup',{method:'POST'})).status,200);
+  assert.equal(f.sqlite.prepare("SELECT COUNT(*) AS n FROM shares WHERE id='unlimited'").get().n,1);
+});
+
+test('admin file deletion clears direct links and malformed JSON produces a controlled error',async()=>{
+  const f=await fixture();
+  assert.equal((await adminCall(f,'/api/admin/login',{method:'POST',body:'null'})).status,401);
+  assert.equal((await adminCall(f,'/api/admin/login',{method:'POST',body:JSON.stringify({key:123})})).status,401);
+  assert.equal((await adminCall(f,'/api/admin/files/file',{method:'DELETE'})).status,200);await f.settle();
+  assert.equal(f.sqlite.prepare('SELECT COUNT(*) AS n FROM direct_links').get().n,0);assert.equal(f.objects.has('object'),false);
+});
+
+test('market view counts persist and malformed pagination never reaches SQLite as Infinity/fractions',async()=>{
+  const f=await fixture();f.sqlite.prepare('UPDATE shares SET is_market=1').run();
+  await f.api.handleShareInfo(f.request('/s/share/info'),f.env,'share');assert.equal(f.sqlite.prepare('SELECT market_views FROM shares').get().market_views,1);
+  const r=await f.api.worker.fetch(f.request('/api/market?page=Infinity&size=6.5'),f.env,f.ctx);assert.equal(r.status,200);
+  const data=await r.json();assert.equal(data.page,1);assert.equal(data.size,6);assert.equal(data.items.length,1);
+});
+
+async function oauthFixture(){
+  const f=await fixture({oauth_enabled:'1'});
+  f.sqlite.prepare("INSERT INTO oauth_providers(id,label,provider_type,client_id,client_secret_cipher,enabled,created_at,updated_at) VALUES('provider','GitHub','github','client',?,1,?,?)").run(await f.api.encryptSecret('secret',f.env.admin),Date.now(),Date.now());
+  return f;
+}
+
+test('OAuth state is consumed atomically and sessions last one hour with arbitrary user IDs',async()=>{
+  const f=await oauthFixture();const state=await f.api.createOAuthState(f.env,'provider','https://test.invalid/oauth/callback');
+  const results=await Promise.all([f.api.verifyOAuthState(f.env,state),f.api.verifyOAuthState(f.env,state)]);assert.equal(results.filter(r=>r.ok).length,1);
+  const session=await f.api.signOAuthSession(f.env,'provider','user.name@域名');assert.ok(session.expiresAt-Date.now()<=3600000);
+  assert.equal((await f.api.verifyOAuthSession(f.env,session.cookie)).userId,'user.name@域名');
+  assert.equal((await f.api.verifyOAuthSession(f.env,'fake_'+session.cookie)).ok,false);
+  f.sqlite.prepare('UPDATE oauth_providers SET enabled=0').run();assert.equal((await f.api.verifyOAuthSession(f.env,session.cookie)).ok,false);
+});
+
+test('OAuth callbacks bind state to the browser, restrict redirects and append separate cookies',async()=>{
+  const f=await oauthFixture();
+  const start=await f.api.handleOAuthStart(f.request('/oauth/start?provider=provider&redirect='+encodeURIComponent('//evil.test/')),f.env);
+  const state=new URL(start.headers.get('location')).searchParams.get('state');const cookies=start.headers.getSetCookie();
+  assert.equal(cookies.length,2);assert.match(cookies[0],/cd_oauth_redirect=%2F;/);
+  const callback='/oauth/callback?code=code&state='+state;
+  const unbound=await f.api.handleOAuthCallback(f.request(callback),f.env);assert.match(unbound.headers.get('location'),/oauth_state_invalid/);
+  const original=globalThis.fetch;
+  globalThis.fetch=async url=>Response.json(String(url).includes('/access_token')?{access_token:'token'}:{id:'user.name'});
+  try {
+    const r=await f.api.handleOAuthCallback(f.request(callback,{headers:{cookie:cookies.map(c=>c.split(';')[0]).join('; ')}}),f.env);
+    assert.equal(r.status,302);assert.equal(r.headers.get('location'),'/');assert.equal(r.headers.getSetCookie().length,3);
+    assert.equal((await f.api.verifyOAuthSession(f.env,r.headers.getSetCookie()[0])).ok,true);
+    const error=await f.api.handleOAuthCallback(f.request('/oauth/callback?error=denied',{headers:{cookie:'cd_oauth_redirect=%ZZ'}}),f.env);assert.equal(error.status,302);
+  } finally {globalThis.fetch=original;}
+});
+
+test('OAuth download login uses the enabled provider database ID',async()=>{
+  const f=await oauthFixture();const r=await f.api.handleDownload(f.request(),f.env,f.ctx,'share');assert.equal(r.status,401);assert.match(await r.text(),/provider=provider/);
+});
+
+test('settings and schema caches do not leak across database bindings',async()=>{
+  const f=await fixture({site_title:'First'});await f.api.getSettings(f.env);
+  const sqlite=new DatabaseSync(':memory:');const env={...f.env,db:database(sqlite)};await f.api.ensureSchema(env);
+  await f.api.updateSettings(env,{site_title:'Second'});assert.equal((await f.api.getSettings(env)).siteTitle,'Second');assert.equal((await f.api.getSettings(f.env)).siteTitle,'First');
+});
+
+test('remote DAV decodes names, authenticates UTF-8 credentials, paginates and reports deletion failures',async()=>{
+  const f=await fixture();const provider=f.api.createWebDAVProvider({url:'https://dav.test/root',username:'用户',password:'密码'});
+  const original=globalThis.fetch;let requestHeaders;
+  const xml='<D:multistatus xmlns:D="DAV:">'+['/root/','/root/%E4%B8%AD%20%26.txt','/root/z.txt'].map(href=>`<D:response><D:href>${href}</D:href><D:propstat><D:prop><D:getcontentlength>10</D:getcontentlength><D:resourcetype/></D:prop></D:propstat></D:response>`).join('')+'</D:multistatus>';
+  globalThis.fetch=async(url,opts)=>{requestHeaders=new Headers(opts.headers);if(opts.method==='DELETE')return new Response('Denied',{status:500});return new Response(xml,{status:207});};
+  try {
+    const first=await provider.list({limit:1});assert.equal(first.truncated,true);assert.equal(first.nextMarker,'z.txt');
+    const next=await provider.list({limit:1,marker:first.nextMarker});assert.equal(next.entries[0].key,'中 &.txt');assert.equal(next.truncated,false);
+    const raw=requestHeaders.get('authorization').slice(6);assert.equal(Buffer.from(raw,'base64').toString('utf8'),'用户:密码');
+    await assert.rejects(provider.delete('file'),/500/);await assert.rejects(provider.delete('../outside'),/Invalid WebDAV/);
+  } finally {globalThis.fetch=original;}
+});
+
+test('failed storage deletion preserves metadata and surfaces an error',async()=>{
+  const f=await fixture();f.env.r2.delete=async()=>{throw new Error('storage unavailable');};
+  const original=console.error;console.error=()=>{};
+  try {
+    const r=await adminCall(f,'/api/admin/files/file',{method:'DELETE'});assert.equal(r.status,500);
+    assert.equal(f.sqlite.prepare('SELECT COUNT(*) AS n FROM files').get().n,1);
+    f.sqlite.prepare('DELETE FROM shares').run();f.sqlite.prepare('DELETE FROM direct_links').run();
+    assert.equal((await adminCall(f,'/api/admin/shares/cleanup',{method:'POST'})).status,502);
+    assert.equal(f.sqlite.prepare('SELECT COUNT(*) AS n FROM files').get().n,1);
+  } finally {console.error=original;}
+});
+
+test('schema migrations do not mark failed migrations complete, retry successfully and repair missing indexes',async()=>{
+  const f=await fixture();const sqlite=new DatabaseSync(':memory:');const db=database(sqlite),env={...f.env,db};
+  const prepare=db.prepare;let fail=true;
+  db.prepare=sql=>{if(fail && sql==='ALTER TABLE files ADD COLUMN path TEXT NOT NULL DEFAULT \'/\'')return {async run(){throw new Error('simulated D1 outage');}};return prepare(sql);};
+  await assert.rejects(f.api.ensureSchema(env),/simulated D1/);
+  assert.ok(Number(sqlite.prepare("SELECT value FROM settings WHERE key='migration_version'").get().value)<11);
+  fail=false;await f.api.ensureSchema(env);assert.ok(sqlite.prepare('PRAGMA table_info(files)').all().some(c=>c.name==='path'));
+  sqlite.exec('DROP INDEX idx_files_path');const result=await f.api.repairDatabase(env);assert.equal(result.ok,true);assert.ok(result.indexesCreated.includes('idx_files_path'));
+});
+
+test('a D1 recovery code can only reset 2FA once under concurrent login requests',async()=>{
+  const f=await fixture({totp_enabled:'1',totp_secret_cipher:'',totp_recovery_hash:await (await fixture()).api.sha256Hex('RECOVERY-CODE')});
+  await f.api.updateSettings(f.env,{totp_secret_cipher:await f.api.encryptSecret(f.api.totpGenerateSecret(),f.env.admin)});
+  const results=await Promise.all(Array.from({length:2},()=>adminCall(f,'/api/admin/login',{method:'POST',body:JSON.stringify({key:f.env.admin,code:'RECOVERY-CODE'})})));
+  assert.equal(results.filter(r=>r.status===200).length,1);assert.equal(results.filter(r=>r.status===401).length,1);await f.settle();
+});
+
+test('storage connectivity tests reject missing configuration and failed read-back while cleaning the test object',async()=>{
+  const f=await fixture();
+  assert.equal((await adminCall(f,'/api/admin/storage/test',{method:'POST',body:JSON.stringify({provider:'s3'})})).status,400);
+  const original=globalThis.fetch;let deletes=0;
+  globalThis.fetch=async(url,opts)=>{if(opts.method==='DELETE')deletes++;return new Response(opts.method==='GET'?'wrong':null,{headers:{'content-length':'5'}});};
+  try {
+    const r=await adminCall(f,'/api/admin/storage/test',{method:'POST',body:JSON.stringify({provider:'s3',endpoint:'https://storage.test',bucket:'bucket',access_key_id:'key',secret_key:'secret'})});
+    assert.equal(r.status,502);assert.equal(deletes,1);
+  } finally {globalThis.fetch=original;}
+});
+
+test('file counters include direct downloads and stale sizes are refreshed from storage',async()=>{
+  const f=await fixture();f.sqlite.prepare("UPDATE files SET size=0").run();
+  const r=await f.api.handleDirectDownload(f.request('/d/direct'),f.env,f.ctx,'direct');assert.equal(r.status,200);assert.equal(r.headers.get('content-length'),'10');
+  assert.equal(f.sqlite.prepare('SELECT size FROM files').get().size,10);
+  const files=await (await adminCall(f,'/api/admin/files')).json();assert.equal(files.files[0].download_count,1);await f.settle();
+});
+
+test('CSV export quotes every text field rather than corrupting plan and batch columns',async()=>{
+  const f=await fixture();f.code();f.sqlite.prepare('UPDATE activation_codes SET plan_id=?,batch_id=?').run('A,B','"quoted"');
+  const r=await adminCall(f,'/api/admin/codes?export=1');assert.equal(r.status,200);assert.match(await r.text(),/,"A,B","""quoted""",/);
+});
+
+test('WebDAV accepts UTF-8 account credentials and advertises the charset',async()=>{
+  const f=await davFixture();await f.api.updateSettings(f.env,{webdav_username:'用户',webdav_password_hash:await f.api.hashPassword('密码')});
+  const authorization='Basic '+Buffer.from('用户:密码','utf8').toString('base64');
+  assert.equal((await f.dav('HEAD','/safe/file.txt',{authorization})).status,200);
+  const unauthorized=await f.api.handleWebDAV(f.request('/webdav/safe/file.txt'),f.env,f.ctx);
+  assert.equal(unauthorized.status,401);assert.match(unauthorized.headers.get('www-authenticate'),/charset="UTF-8"/);
+});
+
+test('missing D1 binding preserves the actionable configuration error',async()=>{
+  const f=await fixture();await assert.rejects(f.api.ensureSchema({...f.env,db:undefined}),/Database binding 'db'/);
 });

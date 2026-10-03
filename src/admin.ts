@@ -1,7 +1,9 @@
+import { getBuiltinProvider } from "./oauth";
+import { integer } from "./input";
 import type { Env } from "./types";
 import { ensureSchema, randomId, getSchemaStatus, repairDatabase } from "./db";
 import { generateCodes, makeBatchId, formatCodeStatus, findCodeByString } from "./codes";
-import { getSettings, updateSettings } from "./settings";
+import { getSettings, updateSettings, invalidateSettingsCache } from "./settings";
 import { checkAdminKey, createSession, verifySession, clientIp, rateLimitLogin, requireAdminIp } from "./auth";
 import { pickLang } from "./i18n";
 import { hashPassword } from "./public";
@@ -9,16 +11,9 @@ import { parseUA } from "./ua";
 import { encryptSecret, decryptSecret, totpGenerateSecret, totpVerify, totpUri, totpGenerateRecoveryCodes, sha256Hex, safeEqual } from "./crypto";
 import { createStorageProvider, type StorageProvider } from "./storage";
 
-/** 懒加载 StorageProvider —— 每次需要时从 settings 构造（settings 有 5s 缓存，成本低） */
-let _storagePromise: Promise<StorageProvider> | null = null;
+/** 每次读取当前存储配置，确保下载、管理和 WebDAV 使用一致的设置。 */
 async function storage(env: Env): Promise<StorageProvider> {
-  if (!_storagePromise) {
-    _storagePromise = (async () => {
-      const s = await getSettings(env);
-      return createStorageProvider(env, s);
-    })();
-  }
-  return _storagePromise;
+  return createStorageProvider(env, await getSettings(env));
 }
 
 const json = (data: unknown, status = 200) =>
@@ -33,7 +28,8 @@ const msg = (req: Request, zh: string, en: string) => (pickLang(req) === "zh" ? 
 /** 安全解析 JSON body（失败返回空对象） */
 async function readJson<T>(req: Request): Promise<Partial<T>> {
   try {
-    return (await req.json()) as Partial<T>;
+    const value = await req.json();
+    return value && typeof value === "object" && !Array.isArray(value) ? value as Partial<T> : {};
   } catch {
     return {};
   }
@@ -117,7 +113,7 @@ export async function handleAdminApi(
     if (!env.admin)
       return json({ error: msg(req, "未设置 admin 密钥，请先执行 npx wrangler secret put admin", "admin is not set. Run: npx wrangler secret put admin") }, 500);
     const body = await readJson<{ key: string; code?: string }>(req);
-    if (!body.key || !checkAdminKey(env, body.key)) {
+    if (typeof body.key !== "string" || !checkAdminKey(env, body.key)) {
       ctx.waitUntil(writeLoginLog(env, req, "login", "fail", "invalid_key"));
       return json({ error: msg(req, "管理密钥错误", "Invalid admin key") }, 401);
     }
@@ -178,14 +174,14 @@ export async function handleAdminApi(
           if (safeEqual(inputHash, hashes[i])) { matched = i; break; }
         }
         if (matched >= 0) {
-          // 从列表中移除已使用的恢复码
           hashes.splice(matched, 1);
-          await updateSettings(env, { totp_recovery_hash: hashes.join(",") });
-          // 恢复码通过 → 自动重置 2FA
-          await updateSettings(env, {
-            totp_enabled: "0",
-            totp_secret_cipher: "",
-          });
+          const result = await env.db.batch([
+            env.db.prepare("UPDATE settings SET value=?1 WHERE key='totp_recovery_hash' AND value=?2").bind(hashes.join(","),s.totpRecoveryHash!),
+            env.db.prepare("UPDATE settings SET value='0' WHERE key='totp_enabled' AND changes()=1"),
+            env.db.prepare("UPDATE settings SET value='' WHERE key='totp_secret_cipher' AND changes()=1"),
+          ]);
+          invalidateSettingsCache();
+          if(result[0].meta.changes !== 1) return json({error:"recovery_code_already_used"},401);
           ctx.waitUntil(writeLoginLog(env, req, "login", "success", "recovery_code"));
           return new Response(JSON.stringify({ ok: true, recovery_used: true, totp_reset: true }), {
             headers: {
@@ -251,7 +247,7 @@ export async function handleAdminApi(
         env.db.prepare("SELECT COUNT(*) AS c FROM files").first<{ c: number }>(),
         env.db.prepare("SELECT COUNT(*) AS c FROM shares").first<{ c: number }>(),
         env.db.prepare(
-          "SELECT COUNT(*) AS c FROM shares WHERE revoked = 0 AND (expires_at IS NULL OR expires_at > ?1) AND (max_downloads IS NULL OR download_count < max_downloads)"
+          "SELECT COUNT(*) AS c FROM shares WHERE revoked = 0 AND (expires_at IS NULL OR expires_at > ?1) AND (max_downloads IS NULL OR max_downloads = 0 OR download_count < max_downloads)"
         )
           .bind(Date.now())
           .first<{ c: number }>(),
@@ -308,7 +304,8 @@ export async function handleAdminApi(
     const { results } = await env.db.prepare(
       `SELECT f.id, f.name, f.size, f.mime, f.uploaded_at,
               (SELECT COUNT(*) FROM shares s WHERE s.file_id = f.id) AS share_count,
-              (SELECT COALESCE(SUM(s.download_count), 0) FROM shares s WHERE s.file_id = f.id) AS download_count
+              ((SELECT COALESCE(SUM(s.download_count), 0) FROM shares s WHERE s.file_id = f.id) +
+               (SELECT COALESCE(SUM(dl.download_count), 0) FROM direct_links dl WHERE dl.file_id=f.id)) AS download_count
        FROM files f ORDER BY f.uploaded_at DESC`
     ).all();
     return json({ files: results ?? [] });
@@ -360,13 +357,14 @@ export async function handleAdminApi(
     const fileId = fileMatch[1];
     const file = await env.db.prepare("SELECT key FROM files WHERE id = ?1").bind(fileId).first<{ key: string }>();
     if (!file) return json({ error: msg(req, "文件不存在", "File not found") }, 404);
+    const st = await storage(env);
+    await st.delete(file.key);
     await env.db.batch([
       env.db.prepare("DELETE FROM shares WHERE file_id = ?1").bind(fileId),
+      env.db.prepare("DELETE FROM direct_links WHERE file_id = ?1").bind(fileId),
       env.db.prepare("DELETE FROM download_logs WHERE file_id = ?1").bind(fileId),
       env.db.prepare("DELETE FROM files WHERE id = ?1").bind(fileId),
     ]);
-    const st = await storage(env);
-    ctx.waitUntil(st.delete(file.key).catch(() => {}));
     return json({ ok: true });
   }
 
@@ -374,7 +372,7 @@ export async function handleAdminApi(
   if (path === "/api/admin/storage/objects" && method === "GET") {
     const prefix = new URL(req.url).searchParams.get("prefix") ?? "";
     const marker = new URL(req.url).searchParams.get("marker") ?? undefined;
-    const limit = Math.min(500, parseInt(new URL(req.url).searchParams.get("limit") || "100", 10) || 100);
+    const limit = integer(url.searchParams.get("limit"), 100, 1, 500);
     try {
       const st = await storage(env);
       const result = await st.list({ prefix, marker, limit });
@@ -395,7 +393,9 @@ export async function handleAdminApi(
     if (keys.length === 0) return json({ error: msg(req, "无有效 key", "No valid keys") }, 400);
     try {
       const st = await storage(env);
-      await Promise.all(keys.map((k) => st.delete(k).catch(() => {})));
+      const results = await Promise.allSettled(keys.map(k => st.delete(k)));
+      const failed = keys.filter((_,i) => results[i].status === "rejected");
+      if(failed.length) return json({ok:false,deleted:keys.length-failed.length,failed_keys:failed,error:msg(req, "部分存储对象删除失败，请重试", "Some objects could not be deleted. Please retry.")},502);
       return json({ ok: true, deleted: keys.length });
     } catch (e: any) {
       return json({ ok: false, error: msg(req, `删除失败: ${e?.message ?? e}`, `Delete failed: ${e?.message ?? e}`) }, 500);
@@ -480,7 +480,7 @@ export async function handleAdminApi(
     const now = Date.now();
     // 1. 删除失效 shares
     const deleted = await env.db.prepare(
-      "DELETE FROM shares WHERE revoked = 1 OR (expires_at IS NOT NULL AND expires_at < ?1) OR (max_downloads IS NOT NULL AND download_count >= max_downloads)"
+      "DELETE FROM shares WHERE revoked = 1 OR (expires_at IS NOT NULL AND expires_at < ?1) OR (max_downloads IS NOT NULL AND max_downloads > 0 AND download_count >= max_downloads)"
     )
       .bind(now)
       .run();
@@ -489,43 +489,27 @@ export async function handleAdminApi(
     const orphans = await env.db.prepare(
       `SELECT f.id, f.key FROM files f
        LEFT JOIN shares s ON s.file_id = f.id
-       WHERE s.id IS NULL`
+       WHERE s.id IS NULL AND NOT EXISTS (SELECT 1 FROM direct_links dl WHERE dl.file_id = f.id)`
     ).all<{ id: string; key: string }>();
 
-    const orphanIds = (orphans.results ?? []).map((o) => o.id);
-    const orphanKeys = (orphans.results ?? []).map((o) => o.key);
-
-    // 3. 删除孤儿 files 的 DB 记录 + 关联 download_logs
-    if (orphanIds.length > 0) {
-      // D1 支持 IN (...) 参数绑定
-      const placeholders = orphanIds.map((_, i) => `?${i + 1}`).join(", ");
+    const st = await storage(env);
+    const removed: string[] = [], failed: string[] = [];
+    // Preserve metadata for objects which the storage backend cannot delete.
+    for (const file of orphans.results ?? []) {
+      try {await st.delete(file.key);removed.push(file.id);}
+      catch {failed.push(file.id);}
+    }
+    for (let offset = 0; offset < removed.length; offset += 80) {
+      const chunk = removed.slice(offset, offset + 80);
+      const placeholders = chunk.map((_, i) => `?${i + 1}`).join(", ");
       await env.db.batch([
-        env.db.prepare(`DELETE FROM download_logs WHERE file_id IN (${placeholders})`).bind(...orphanIds),
-        env.db.prepare(`DELETE FROM files WHERE id IN (${placeholders})`).bind(...orphanIds),
+        env.db.prepare(`DELETE FROM download_logs WHERE file_id IN (${placeholders})`).bind(...chunk),
+        env.db.prepare(`DELETE FROM files WHERE id IN (${placeholders})`).bind(...chunk),
       ]);
     }
-
-    // 4. 异步清理孤儿存储对象（不阻塞响应，批量删除可能慢）
-    if (orphanKeys.length > 0) {
-      ctx.waitUntil(
-        (async () => {
-          const st = await storage(env);
-          for (const key of orphanKeys) {
-            try {
-              await st.delete(key);
-            } catch {
-              // 删除失败不影响 DB 清理结果，静默跳过
-            }
-          }
-        })()
-      );
-    }
-
-    return json({
-      ok: true,
-      deleted_shares: deleted.meta.changes ?? 0,
-      deleted_orphan_files: orphanIds.length,
-    });
+    return json({ok:failed.length === 0,deleted_shares:deleted.meta.changes ?? 0,
+      deleted_orphan_files:removed.length, failed_file_ids:failed,
+      ...(failed.length ? {error:msg(req,"部分文件清理失败，文件记录已保留，请重试","Some files could not be cleaned up. Their records were retained. Please retry.")} : {})}, failed.length ? 502 : 200);
   }
 
   // ── 撤销/删除分享 ─────────────────────────────────
@@ -560,8 +544,8 @@ export async function handleAdminApi(
 
   // ── 管理端市场列表 ──────────────────────────────────
   if (path === "/api/admin/market" && method === "GET") {
-    const page = Math.max(1, Number(url.searchParams.get("page")) || 1);
-    const perPage = Math.min(100, Math.max(10, Number(url.searchParams.get("size")) || 20));
+    const page = integer(url.searchParams.get("page"), 1, 1, 1_000_000);
+    const perPage = integer(url.searchParams.get("size"), 20, 10, 100);
     const q = url.searchParams.get("q")?.trim();
     const filterOnly = url.searchParams.get("only") === "market" ? " AND s.is_market = 1" : "";
     const where = q
@@ -580,8 +564,8 @@ export async function handleAdminApi(
 
   // ── 下载记录（分页 + 筛选） ────────────────────────
   if (path === "/api/admin/logs" && method === "GET") {
-    const page = Math.max(1, Number(url.searchParams.get("page")) || 1);
-    const perPage = Math.min(100, Math.max(10, Number(url.searchParams.get("per_page")) || 20));
+    const page = integer(url.searchParams.get("page"), 1, 1, 1_000_000);
+    const perPage = integer(url.searchParams.get("per_page"), 20, 10, 100);
     const q = url.searchParams.get("q")?.trim();
     const where: string[] = [];
     const binds: (string | number)[] = [];
@@ -616,7 +600,7 @@ export async function handleAdminApi(
     let sql: string;
     const binds: number[] = [];
     if (mode === "older") {
-      const days = Math.max(1, Number(url.searchParams.get("days")) || 30);
+      const days = integer(url.searchParams.get("days"), 30, 1, 36500);
       sql = "DELETE FROM download_logs WHERE created_at < ?1";
       binds.push(Date.now() - days * 86400_000);
     } else {
@@ -658,8 +642,8 @@ export async function handleAdminApi(
 
   // ── 登录安全日志（分页 + 筛选） ────────────────────────
   if (path === "/api/admin/login-logs" && method === "GET") {
-    const page = Math.max(1, Number(url.searchParams.get("page")) || 1);
-    const perPage = Math.min(100, Math.max(10, Number(url.searchParams.get("per_page")) || 20));
+    const page = integer(url.searchParams.get("page"), 1, 1, 1_000_000);
+    const perPage = integer(url.searchParams.get("per_page"), 20, 10, 100);
     const q = url.searchParams.get("q")?.trim();
     const action = url.searchParams.get("action")?.trim();
     const result = url.searchParams.get("result")?.trim();
@@ -715,7 +699,7 @@ export async function handleAdminApi(
     let sql: string;
     const binds: number[] = [];
     if (mode === "older") {
-      const days = Math.max(1, Number(url.searchParams.get("days")) || 30);
+      const days = integer(url.searchParams.get("days"), 30, 1, 36500);
       sql = "DELETE FROM login_logs WHERE created_at < ?1";
       binds.push(Date.now() - days * 86400_000);
     } else {
@@ -975,7 +959,7 @@ export async function handleAdminApi(
     const r = await env.db.prepare(
       `DELETE FROM direct_links WHERE revoked = 1
         OR (expires_at IS NOT NULL AND expires_at < ?1)
-        OR (max_downloads IS NOT NULL AND download_count >= max_downloads)`
+        OR (max_downloads IS NOT NULL AND max_downloads > 0 AND download_count >= max_downloads)`
     ).bind(now).run();
     return json({ ok: true, deleted: r.meta.changes ?? 0 });
   }
@@ -1180,7 +1164,6 @@ export async function handleAdminApi(
 
     await updateSettings(env, patch);
     // storage 配置变了，清掉缓存的 storage provider 让下次请求用新配置
-    _storagePromise = null;
     return json({ ok: true });
   }
 
@@ -1254,6 +1237,8 @@ export async function handleAdminApi(
       custom_token_field?: string;
       enabled?: boolean;
     }>(req);
+    for(const key of ["label","provider_type","client_id","client_secret","scope","custom_authorize_url","custom_token_url","custom_userinfo_url","custom_token_field"] as const)
+      if(body[key] !== undefined && typeof body[key] !== "string") return json({error:"invalid_"+key},400);
     const validTypes = ["github", "google", "microsoft", "discord", "custom"];
     const providerType = (body.provider_type && validTypes.includes(body.provider_type))
       ? body.provider_type
@@ -1261,7 +1246,7 @@ export async function handleAdminApi(
     const label = (body.label || providerType).trim().slice(0, 40);
     const clientId = (body.client_id || "").trim();
     if (!clientId) return json({ error: "client_id_required" }, 400);
-    const scope = (body.scope || "").trim() || "openid email profile";
+    const scope = (body.scope || "").trim() || getBuiltinProvider(providerType)?.default_scope || "openid email profile";
     const now = Date.now();
     const id = randomId();
     let secretCipher: string | null = null;
@@ -1413,14 +1398,14 @@ export async function handleAdminApi(
       batch_id?: string;
       notes?: string;
     }>(req);
-    const count = Math.max(1, Math.min(10000, Number(body.count) || 100));
-    const traffic = Math.max(0, Number(body.traffic_bytes) || 0);
-    const days = Math.max(0, Number(body.days_valid) || 0);
+    const count = integer(body.count, 100, 1, 10000);
+    const traffic = integer(body.traffic_bytes, 0);
+    const days = integer(body.days_valid, 0, 0, 36500);
     if (traffic === 0 && days === 0) {
       return json({ error: msg(req, "至少设置流量额度或有效天数之一", "Set at least traffic OR days_valid") }, 400);
     }
 
-    const batchIdRaw = (body.batch_id ?? "").trim();
+    const batchIdRaw = (typeof body.batch_id === "string" ? body.batch_id : "").trim();
     const batchId = batchIdRaw ? batchIdRaw : makeBatchId();
     const now = Date.now();
     const ids = generateCodes(count);
@@ -1457,8 +1442,8 @@ export async function handleAdminApi(
     const plan = sp.get("plan");
     const q = sp.get("q");
     const exportCsv = sp.get("export") === "1";
-    const page = Math.max(1, Number(sp.get("page")) || 1);
-    const pageSize = Math.min(500, Math.max(10, Number(sp.get("size")) || 50));
+    const page = integer(sp.get("page"), 1, 1, 1_000_000);
+    const pageSize = integer(sp.get("size"), 50, 10, 500);
     const offset = (page - 1) * pageSize;
 
     const where: string[] = [];
@@ -1518,10 +1503,10 @@ export async function handleAdminApi(
         const esc = (v: any) => {
           if (v == null) return "";
           const s = String(v).replace(/"/g, '""');
-          return /[",\n]/.test(s) ? `"${s}"` : s;
+          return /[",\n\r]/.test(s) ? `"${s}"` : s;
         };
         csvRows.push(
-          [r.code, r.plan_id ?? "", r.batch_id ?? "", r.traffic_bytes, r.used_bytes, r.days_valid, r.status, esc(r.quota_message), esc(r.notes), r.created_at ?? "", r.activated_at ?? "", r.expires_at ?? ""].join(",")
+          [r.code, r.plan_id, r.batch_id, r.traffic_bytes, r.used_bytes, r.days_valid, r.status, r.quota_message, r.notes, r.created_at, r.activated_at, r.expires_at].map(esc).join(",")
         );
       }
       const body = csvRows.join("\n");
@@ -1668,6 +1653,11 @@ export async function handleAdminApi(
       }
     }
 
+    const selected = body.provider ?? s.storageProvider;
+    if(selected === "s3" && (!(body.endpoint ?? s.s3Endpoint) || !(body.bucket ?? s.s3Bucket)))
+      return json({ok:false,error:"incomplete_s3_configuration"},400);
+    if(selected === "webdav" && (!(body.url ?? s.storageWebdavUrl) || !(body.username ?? s.storageWebdavUsername)))
+      return json({ok:false,error:"incomplete_webdav_configuration"},400);
     // ② S3 测试
     const useS3 =
       (body.provider ?? s.storageProvider) === "s3" &&
@@ -1690,26 +1680,16 @@ export async function handleAdminApi(
         secretAccessKey: secret,
         addressingStyle: (body.addressing_style ?? s.s3AddressingStyle ?? "path") as "path" | "virtual",
       };
+      const prov = createS3Provider(cfg);
+      const testKey = `_nano-cloud-test-${Date.now()}-${randomId(6)}`;
       try {
-        const prov = createS3Provider(cfg);
-        const testKey = `_r2pan-test-${Date.now()}`;
-        // 写一个测试对象
-        await prov.put(testKey, new TextEncoder().encode("nano-cloud storage test"), {
-          contentType: "text/plain",
-        });
-        // 读回验证
+        const payload = "nano-cloud storage test";
+        await prov.put(testKey,new TextEncoder().encode(payload),{contentType:"text/plain"});
         const obj = await prov.get(testKey);
+        if(!obj || await new Response(obj.body).text() !== payload) throw new Error("Storage read-back verification failed");
         const head = await prov.head(testKey);
-        // 清理
-        await prov.delete(testKey);
-        return json({
-          ok: true,
-          provider: "s3",
-          endpoint: cfg.endpoint,
-          bucket: cfg.bucket,
-          head_ok: !!head,
-          head_size: head?.size ?? 0,
-        });
+        if(!head || head.size !== new TextEncoder().encode(payload).byteLength) throw new Error("Storage metadata verification failed");
+        return json({ok:true,provider:"s3",endpoint:cfg.endpoint,bucket:cfg.bucket,head_ok:true,head_size:head.size});
       } catch (err: any) {
         return json({
           ok: false,
@@ -1717,6 +1697,8 @@ export async function handleAdminApi(
           message: String(err?.message ?? err),
           detail: err?.stack ?? "",
         }, 502);
+      } finally {
+        await prov.delete(testKey).catch(error => console.error("storage test cleanup failed", error));
       }
     } else {
       // R2 模式 —— 直接 head 一个已知 key 或 list 试一下
@@ -1749,7 +1731,7 @@ export async function handleAdminApi(
   //   返回每个国家的下载次数、字节数、活跃 IP 数
   // ─══════════════════════════════════════════════════════════
   if (path === "/api/admin/global/stats" && method === "GET") {
-    const sinceDays = Math.min(365, Math.max(1, Number(new URL(req.url).searchParams.get("since_days")) || 30));
+    const sinceDays = integer(url.searchParams.get("since_days"), 30, 1, 365);
     const since = Date.now() - sinceDays * 86400_000;
     const countrySql = `
       SELECT

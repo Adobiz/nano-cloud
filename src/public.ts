@@ -1,5 +1,6 @@
+import { parseRange } from "./range";
 import type { Env, ShareWithFile, DirectLinkWithFile } from "./types";
-import { getSettings, addTraffic } from "./settings";
+import { getSettings } from "./settings";
 import { reserveDownload } from "./download-accounting";
 import { parseUA } from "./ua";
 import { clientIp, isAdminWhitelisted } from "./auth";
@@ -9,16 +10,9 @@ import { hmacHex, sha256Hex, randomHex, safeEqual, decryptSecret } from "./crypt
 import { verifyOAuthSession } from "./oauth";
 import { createStorageProvider, type StorageProvider, type StorageObject } from "./storage";
 
-/** 懒加载 StorageProvider —— 和 admin.ts 类似 */
-let _storagePromise: Promise<StorageProvider> | null = null;
+/** 根据当前设置构造存储，避免切换后继续使用旧后端。 */
 async function storage(env: Env): Promise<StorageProvider> {
-  if (!_storagePromise) {
-    _storagePromise = (async () => {
-      const s = await getSettings(env);
-      return createStorageProvider(env, s);
-    })();
-  }
-  return _storagePromise;
+  return createStorageProvider(env, await getSettings(env));
 }
 
 const TOKEN_TTL_MS = 24 * 3600_000; // 授权令牌有效期 24h
@@ -103,26 +97,6 @@ export async function verifyTurnstileToken(
   } catch {
     return false;
   }
-}
-
-/** 解析 Range 头 → {offset, length}，无效返回 null */
-function parseRange(header: string | null, size: number): { offset: number; length: number } | null {
-  if (!header) return null;
-  const m = /^bytes=(\d*)-(\d*)$/.exec(header.trim());
-  if (!m || (m[1] === "" && m[2] === "")) return null;
-  let offset: number, length: number;
-  if (m[1] === "") {
-    // 后缀范围: bytes=-N
-    const n = Math.min(Number(m[2]), size);
-    offset = size - n;
-    length = n;
-  } else {
-    offset = Number(m[1]);
-    const end = m[2] === "" ? size - 1 : Math.min(Number(m[2]), size - 1);
-    length = end - offset + 1;
-  }
-  if (offset >= size || length <= 0) return null;
-  return { offset, length };
 }
 
 /* ═══════════ 分享密码 & 下载授权令牌 ═══════════
@@ -221,10 +195,10 @@ export async function handleShareInfo(req: Request, env: Env, token: string): Pr
     oauthAuthed = oauthCheck.ok;
   }
 
-  // 市场浏览量累加（仅对 is_market=1 的分享 + 有至少 500ms 间隔的轻量节流）
-  if (!row.revoked && row.is_market) {
-    env.db.prepare("UPDATE shares SET market_views = market_views + 1 WHERE id = ?1 AND is_market = 1")
-      .bind(token).run().catch(() => {}); // 不 await，不阻塞响应
+  // Persist market views before returning so the write survives the request.
+  if (status === "ok" && row.is_market) {
+    await env.db.prepare("UPDATE shares SET market_views = market_views + 1 WHERE id = ?1 AND is_market = 1")
+      .bind(token).run();
   }
 
   return json({
@@ -263,7 +237,7 @@ export async function handleShareInfo(req: Request, env: Env, token: string): Pr
 async function getShare(env: Env, token: string): Promise<ShareWithFile | null> {
   return await env.db.prepare(
     `SELECT s.id, s.file_id, s.created_at, s.expires_at, s.max_downloads, s.download_count, s.revoked, s.password_hash,
-            s.download_name, f.key, f.name, f.size, f.mime
+            s.download_name, s.is_market, f.key, f.name, f.size, f.mime
      FROM shares s JOIN files f ON f.id = s.file_id
      WHERE s.id = ?1`
   )
@@ -383,8 +357,12 @@ export async function handleDownload(
   if (settings.oauthEnabled) {
     const oauthResult = await verifyOAuthSession(env, req.headers.get("cookie"));
     if (!oauthResult.ok) {
-      const providerName = settings.oauthProvider === "custom" ? "OAuth" : settings.oauthProvider;
-      const startUrl = `/oauth/start?provider=${encodeURIComponent(settings.oauthProvider)}&redirect=${encodeURIComponent("/s/" + token)}`;
+      const provider = await env.db.prepare("SELECT id, label FROM oauth_providers WHERE enabled = 1 AND client_id != '' AND client_secret_cipher IS NOT NULL AND client_secret_cipher != '' ORDER BY id LIMIT 1")
+        .first<{id: string; label: string}>();
+      if (!provider) return errorPage(req, 503, {zh: "登录服务未配置", en: "Login unavailable"},
+        {zh: "请联系管理员配置可用的登录服务。", en: "Please contact the administrator."});
+      const providerName = provider.label || "OAuth";
+      const startUrl = `/oauth/start?provider=${encodeURIComponent(provider.id)}&redirect=${encodeURIComponent("/s/" + token)}`;
       return errorPage(req, 401, { zh: "需要登录", en: "OAuth Login Required" },
         { zh: `该资源需要通过 ${providerName} 账号登录后才能下载。`, en: `This resource requires ${providerName} login.` },
         { siteTitle: settings.siteTitle, oauth_login_url: startUrl });
@@ -569,6 +547,9 @@ async function streamFile(
   const headerCode = req.headers.get("x-activation-code");
   const activationCode = (urlCode || headerCode || "").trim().toUpperCase() || null;
   const codeRow = activationCode ? await findCodeByString(env, activationCode) : null;
+  if(activationCode && (!codeRow || !checkCodeUsable(codeRow).ok))
+    return errorPage(req,403,{zh:"激活码不可用",en:"Activation Code Unavailable"},
+      {zh:"激活码已失效，请重新绑定。",en:"Please bind a valid activation code."});
 
   const isHead = req.method === "HEAD";
   const rangeHeader = isHead ? null : req.headers.get("range");
@@ -589,6 +570,8 @@ async function streamFile(
     return errorPage(req, 404, { zh: "文件不存在", en: "File Not Found" },
       { zh: "文件可能已被删除。", en: "File may have been deleted." });
 
+  if(!range && obj.size !== row.size) await env.db.prepare("UPDATE files SET size=?1 WHERE id=?2 AND size=?3")
+    .bind(obj.size,row.file_id,row.size).run();
   const headers = new Headers();
   headers.set("content-type", obj.contentType);
   if (obj.etag) headers.set("etag", obj.etag);
@@ -601,7 +584,7 @@ async function streamFile(
   const servedLen = range ? range.length : obj.size;
   headers.set("content-length", String(servedLen));
   if (range) {
-    headers.set("content-range", `bytes ${range.offset}-${range.offset + servedLen - 1}/${row.size}`);
+    headers.set("content-range", `bytes ${range.offset}-${range.offset + servedLen - 1}/${obj.size}`);
   }
 
   // HEAD only reads metadata. Reserve the link allowance and activation quota
@@ -611,16 +594,23 @@ async function streamFile(
   if (!body) return errorPage(req, 502,
     { zh: "文件内容不可读取", en: "Invalid Storage Response" },
     { zh: "存储后端未返回文件内容。", en: "Storage returned no file body." });
-  const reservation = await reserveDownload(env, kind, token, codeRow, servedLen);
+  const {browser, os} = parseUA(ua);
+  const reservation = await reserveDownload(env, kind, token, codeRow, servedLen, {
+    whitelisted:isAdminWhitelisted(ip, settings.adminIps),
+    log:{fileId:row.file_id,fileName:row.name,ip,ua,browser,os,country}
+  });
   if (!reservation.ok) {
     await body.cancel().catch(() => {});
-    return errorPage(req, reservation.reason === "quota" ? 403 : 410,
+    if(reservation.reason === "ip" && settings.autoBan) await env.db.prepare(`INSERT INTO banned_ips(ip,reason,banned_at,expires_at) VALUES(?1,?2,?3,?4)
+      ON CONFLICT(ip) DO UPDATE SET reason=excluded.reason,banned_at=excluded.banned_at,expires_at=excluded.expires_at`)
+      .bind(ip,"Download limit exceeded",Date.now(),settings.banHours > 0 ? Date.now()+settings.banHours*3600_000 : null).run();
+    return errorPage(req, reservation.reason === "traffic" ? 503 : reservation.reason === "link" ? 410 : 403,
       { zh: "下载不可用", en: "Download Unavailable" },
-      { zh: reservation.reason === "quota" ? "激活码剩余额度不足或已失效。" : "链接已失效或下载名额已用完。",
+      { zh: reservation.reason === "quota" ? "激活码剩余额度不足或已失效。" : reservation.reason === "traffic" ? "本月剩余流量不足。" : reservation.reason === "ip" ? "该 IP 下载次数已达上限。" : "链接已失效或下载名额已用完。",
         en: "Link unavailable or insufficient activation quota." });
   }
 
-  // Logs and traffic totals run in the background; quota has already been paid.
+  // Accounting and logs are committed; only optional analytics run in the background.
   const bytes = servedLen;
   const codeId = codeRow ? codeRow.code : null;
   ctx.waitUntil(
@@ -643,14 +633,6 @@ async function streamFile(
         } catch { /* ignore */ }
       }
 
-      await env.db.prepare(
-        `INSERT INTO download_logs(share_id, file_id, file_name, ip, ua, browser, os, country, bytes, created_at, activation_code)
-         VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)`
-      )
-        // 直链也记 download_logs —— share_id 字段存 direct link token 方便追踪
-        .bind(token, row.file_id, row.name, ip, ua.slice(0, 500), browser, os, country, bytes, Date.now(), codeId)
-        .run();
-      await addTraffic(env, bytes);
 
     })()
   );

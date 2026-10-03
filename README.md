@@ -40,7 +40,7 @@
 | 下载统计 | 下载日志、每日流量与国家分布；Analytics Engine 可选 |
 | 界面 | 中文/英文、响应式布局、管理后台浅色/深色主题 |
 
-生产代码使用 Workers 与 Web Crypto 原生 API，无 npm 运行时依赖。此版本在上游基础上调整前端样式与项目名称，并修复后台脚本、分享下载、全球分布、流量统计和激活码预扣费。其他已审查的问题仍需逐项处理。
+生产代码使用 Workers 与 Web Crypto 原生 API，无 npm 运行时依赖。此版本在上游基础上调整前端样式与项目名称，并修复后台脚本、分享下载、全球分布、流量统计和激活码预扣费。同时修复了并发限额、存储切换、WebDAV 路径与覆盖操作、OAuth 回调和数据库迁移问题。
 
 ## 快速开始
 
@@ -65,6 +65,18 @@ npm run dev -- --local --config wrangler.jsonc
 访问 [http://localhost:8787/admin](http://localhost:8787/admin)，使用上述 `admin` 密钥登录。当前 `wrangler.jsonc` 声明了 D1 与 R2 绑定，Wrangler 可在本地模拟这些资源。数据库在首次请求时初始化。
 
 `.dev.vars` 已被忽略，请勿提交到仓库。
+
+## 回归验证
+
+测试使用 Node.js 24 或更高版本，在内存 SQLite、模拟 R2 和模拟远程接口上执行，不连接真实 Cloudflare 账号。
+
+```bash
+npm run check
+npm test
+npx wrangler deploy --dry-run --config wrangler.jsonc
+```
+
+部署后再验证：普通与密码分享下载、激活码余额、并发限额、S3/WebDAV 上传下载、WebDAV 挂载与文件操作、OAuth 登录回跳，以及流量统计。旧记录的文件大小会在下载或 HEAD 请求时与存储元数据同步。
 
 ## 部署到 Cloudflare
 
@@ -151,7 +163,7 @@ wrangler.toml            上游保留的另一份配置
 
 ## 致谢
 
-nano-cloud 基于 [Admin666pro/cloud-r2pan](https://github.com/Admin666pro/cloud-r2pan) 开发。感谢原作者 **Admin666pro** 提供 Workers、R2、D1 架构以及文件分享、安全验证和多存储实现。本版本保留上游业务代码，调整前端样式与项目名称；README 的版式参考 FlareDrive。
+nano-cloud 基于 [Admin666pro/cloud-r2pan](https://github.com/Admin666pro/cloud-r2pan) 开发。感谢原作者 **Admin666pro** 提供 Workers、R2、D1 架构以及文件分享、安全验证和多存储实现。本版本沿用上游架构，调整前端样式与项目名称，并修复下载、鉴权、存储和统计流程；README 的版式参考 FlareDrive。
 
 ## 许可证
 

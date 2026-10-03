@@ -994,11 +994,14 @@ const extOf = n => (/\.([a-z0-9]+)$/i.exec(n||'')||[])[1]?.toLowerCase() || '';
 const extColor = n => EXT_COLORS[extOf(n)] || EXT_COLORS.default;
 const ficon = name => `<span class="ficon" style="color:${extColor(name)}">${esc((extOf(name)||'?').toUpperCase().slice(0,4))}</span>`;
 
+let navigationEpoch = 0;
 async function api(path, opts={}){
+  const epoch = navigationEpoch;
   const r = await fetch(path, { credentials:'same-origin', ...opts,
     headers: { ...(opts.body && !(opts.body instanceof FormData) ? {'content-type':'application/json'} : {}), ...(opts.headers||{}) } });
   let data = null;
   try { data = await r.json(); } catch {}
+  if(epoch !== navigationEpoch) throw new Error('stale_request');
   if(r.status === 401 && !path.includes('/login')) { showLogin(); throw new Error('unauthorized'); }
   if(!r.ok) throw new Error(data?.error || `HTTP ${r.status}`);
   return data;
@@ -1027,8 +1030,8 @@ const confirmDialog = (title, msg, danger=true) => new Promise(resolve => {
     <div class="actions">
       <button class="btn" data-x>${esc(t('cancel'))}</button>
       <button class="btn ${danger?'danger':'primary'}" data-ok>${esc(t('confirm'))}</button>
-    </div>`);
-  $('[data-ok]').onclick = () => { closeModal(); resolve(true); };
+    </div>`, () => resolve(false));
+  $('[data-ok]').onclick = () => { modalCloseHook = null; closeModal(); resolve(true); };
   $('[data-x]').onclick = () => { closeModal(); resolve(false); };
 });
 
@@ -1038,15 +1041,17 @@ function toggleLang(){
 }
 
 /* ═══════════ 模态框 ═══════════ */
-function openModal(html){
+let modalCloseHook = null;
+function openModal(html, onClose = null){
   closeModal();
+  modalCloseHook = onClose;
   const mask = document.createElement('div');
   mask.className = 'modal-mask'; mask.id = 'modal';
   mask.innerHTML = `<div class="modal">${html}</div>`;
   mask.addEventListener('click', e => { if(e.target === mask) closeModal(); });
   document.body.appendChild(mask);
 }
-function closeModal(){ $('#modal')?.remove(); }
+function closeModal(){ $('#modal')?.remove(); const onClose = modalCloseHook; modalCloseHook = null; onClose?.(); }
 
 /* ═══════════ 登录视图（支持 2FA 两阶段） ═══════════ */
 let siteTitle = 'nano-cloud';
@@ -1226,6 +1231,7 @@ async function showApp(){
       document.documentElement.dataset.theme = s.ui_theme === 'light' ? 'light' : 'dark';
     }
   }catch{
+    if(document.querySelector('#login-view')) return;
     // 兜底
     document.documentElement.dataset.theme = location.pathname.includes('/admin/apple') ? 'apple-dark' : 'dark';
   }
@@ -1315,6 +1321,7 @@ const TAB_LOADERS = {
 };
 
 function switchTab(tab){
+  const epoch = ++navigationEpoch;
   currentTab = tab;
   openGroup = TAB_TO_GROUP[tab] || tab;
   // 更新侧边栏高亮 & 展开
@@ -1337,6 +1344,7 @@ function switchTab(tab){
   const v = $('#view');
   v.innerHTML = '<div class="spin"></div>';
   (TAB_LOADERS[tab] || (() => Promise.resolve()))().catch(e => {
+    if(epoch !== navigationEpoch || e.message === 'unauthorized' || e.message === 'stale_request') return;
     v.innerHTML = `<div class="glass section"><div class="empty"><div class="icon">⚠️</div>${esc(e.message === 'unauthorized' ? t('loadingErr') : e.message)}</div></div>`;
   });
 }
@@ -3208,7 +3216,7 @@ async function loadSettings(){
     $('#op-type')?.addEventListener('change', () => {
       $('#op-custom-block').style.display = $('#op-type').value === 'custom' ? 'block' : 'none';
       const preset = PROVIDER_PRESETS[$('#op-type').value];
-      if (preset && $('#op-scope')?.value === '') $('#op-scope').value = preset.defaultScope;
+      if (preset && ($('#op-scope')?.value === '' || Object.values(PROVIDER_PRESETS).some(p => p.defaultScope === $('#op-scope')?.value))) $('#op-scope').value = preset.defaultScope;
     });
     $('[data-x]')?.addEventListener('click', closeModal);
     $('#op-save')?.addEventListener('click', async () => {

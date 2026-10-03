@@ -145,6 +145,9 @@ const I18N = {
     maxedTitle: '下载次数已达上限', maxedMsg: '该资源允许下载 {n} 次，名额已用完。',
     downloads: '下载次数', limit: '次数上限', size: '文件大小',
     download: '下载文件',
+    downloadFailed: '下载验证失败，请稍后重试',
+    oauthUnavailable: '登录服务未配置完整，请联系管理员',
+    turnstileUnavailable: '人机验证未配置完整，请联系管理员',
     protected: '🔒 该分享受密码保护',
     passwordPlaceholder: '输入访问密码', unlock: '解锁下载',
     unlockHint: '输入管理员提供的密码后即可开始下载',
@@ -195,6 +198,9 @@ const I18N = {
     codeNotBound: '未绑定激活码',
   },
   en: {
+    downloadFailed: 'Download verification failed. Please retry.',
+    oauthUnavailable: 'Login is unavailable. Please contact the administrator.',
+    turnstileUnavailable: 'Human verification is unavailable. Please contact the administrator.',
     pageTitle: 'Share · {site}',
     loading: 'Loading share info…',
     notFoundTitle: 'Link Not Found', notFoundMsg: 'This share link is invalid or has been removed.',
@@ -377,6 +383,15 @@ async function boot(){
       }
     } catch {}
   }
+  const boundCode = getBoundCode();
+  if(boundCode) {
+    try {
+      const response = await fetch('/api/codes/status?code=' + encodeURIComponent(boundCode), {cache:'no-store'});
+      const status = await response.json();
+      if(response.status === 404 || response.status === 400 || (response.ok && status.usable === false))
+        localStorage.removeItem('r2pan_code');
+    } catch {}
+  }
   const siteName = info.site_title || 'nano-cloud';
   document.title = t('pageTitle', {site: siteName});
   $('#brand-text').innerHTML = `Powered by <b>${esc(siteName)}</b>`;
@@ -405,6 +420,7 @@ function render(d, siteName, oauthErr, oauthProviders){
   codeButton.classList.toggle('position-right', d.codes_floating_button?.position === 'top-right');
   // Turnstile 判断：后端返回了 needs_now (on_share 模式已判断) 或 mode=on_download 时需要
   const ts = d.turnstile || {};
+  if(ts.enabled && !ts.sitekey) {renderError(t("turnstileUnavailable"), t("turnstileUnavailable"));return;}
   const tsEnabled = ts.enabled && ts.sitekey;
   const tsOnShare = ts.mode === 'on_share' || ts.mode === 'both';
   const tsOnDownload = ts.mode === 'on_download' || ts.mode === 'both';
@@ -412,7 +428,7 @@ function render(d, siteName, oauthErr, oauthProviders){
 
   // OAuth2 判断（多 Provider）
   const oauth = d.oauth || {enabled:false, authed:false};
-  const oauthEnabled = oauth.enabled && oauthProviders && oauthProviders.length > 0;
+  const oauthEnabled = !!oauth.enabled;
   const oauthAuthed = !!oauth.authed;
 
   const oauthErrHtml = oauthErr ? `
@@ -433,12 +449,12 @@ function render(d, siteName, oauthErr, oauthProviders){
     <div class="oauth-block" style="margin-top:22px">
       <div style="font-size:13px;color:rgba(255,255,255,.6);margin-bottom:10px">${esc(t('oauthHint'))}</div>
       <div style="display:flex;gap:10px;flex-wrap:wrap">
-        ${oauthProviders.map(p => `
+        ${oauthProviders.length ? oauthProviders.map(p => `
           <a class="btn" href="${p.start_url}&redirect=${encodeURIComponent(location.pathname)}" style="background:linear-gradient(180deg,#58a6ff,#1f6feb);display:inline-flex;align-items:center;gap:8px;padding:12px 20px;border-radius:14px;text-decoration:none;font-size:13.5px;font-weight:500;color:#fff;box-shadow:0 6px 16px rgba(10,124,255,.3)">
             ${PROVIDER_ICONS[p.provider_type] || PROVIDER_ICONS.custom}
             ${esc(t('oauthLogin', {provider: p.label || p.name}))}
           </a>
-        `).join('')}
+        `).join('') : esc(t('oauthUnavailable'))}
       </div>
     </div>` : '';
 
@@ -488,7 +504,7 @@ function render(d, siteName, oauthErr, oauthProviders){
         <div class="pw-hint">${esc(t('unlockHint'))}</div>
         ${d.direct_download_url ? `<button class="btn" id="copy-direct" style="margin-top:8px;background:rgba(255,255,255,.1);font-size:12px">📋 ${esc(t('copyDirectLink'))}</button>` : ''}
       </div>`
-      :`<a class="btn" id="dl" href="javascript:void(0)" ${quotaBlocked?'style="pointer-events:none;opacity:.45"':''} ${oauthEnabled && !oauthAuthed?'style="pointer-events:none;opacity:.45"':''}>
+      :`<a class="btn" id="dl" href="javascript:void(0)" ${quotaBlocked || (oauthEnabled && !oauthAuthed)?'style="pointer-events:none;opacity:.45"':''}>
         <svg viewBox="0 0 24 24" fill="none"><path d="M12 3v12m0 0l-4.5-4.5M12 15l4.5-4.5M4 20h16" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         ${esc(t('download'))}
       </a>
@@ -710,7 +726,8 @@ async function verifiedDownload(d, ts, tsEnabled, tsOnDownload, password){
   const tk = await challengeToken(d, ts, tsEnabled, tsOnDownload);
   const r = await fetch(`/s/${token}/verify`, { method:'POST', headers:{'content-type':'application/json'},
     body:JSON.stringify({password, turnstile:tk}) });
-  const res = await r.json();
+  let res;
+  try {res = await r.json();} catch {window.__tsToken = null;throw new Error('verify_failed');}
   // A wrong password is checked before Siteverify, so its token remains usable.
   if (res.error !== 'bad_password') window.__tsToken = null;
   if (!r.ok || !res.url) throw new Error(res.error || 'verify_failed');
@@ -724,7 +741,7 @@ async function triggerDownload(d, ts, tsEnabled, tsOnDownload){
   if(downloadPending) return;
   downloadPending = true;
   try { await verifiedDownload(d, ts, tsEnabled, tsOnDownload); }
-  catch { alert(t('turnstileFail')); }
+  catch(error) { alert(t(error.message === 'turnstile_failed' || error.message.startsWith('ts_') ? 'turnstileFail' : 'downloadFailed')); }
   finally { downloadPending = false; }
 }
 async function wireUnlock(d, ts, tsEnabled, tsOnDownload, oauthEnabled, oauthAuthed, oauthProviders){
@@ -733,13 +750,14 @@ async function wireUnlock(d, ts, tsEnabled, tsOnDownload, oauthEnabled, oauthAut
   const unlock = async () => {
     if(pending || !input.value) return;
     if(oauthEnabled && !oauthAuthed){
+      if(!oauthProviders[0]?.start_url){err.textContent = t('oauthUnavailable');return;}
       location.href = oauthProviders[0].start_url + '&redirect=' + encodeURIComponent(location.pathname);
       return;
     }
     pending = true; btn.disabled = true; err.textContent = '';
     try { await verifiedDownload(d, ts, tsEnabled, tsOnDownload, input.value); }
     catch(error){
-      err.textContent = t(error.message === 'bad_password' ? 'wrongPassword' : 'turnstileFail');
+      err.textContent = t(error.message === 'bad_password' ? 'wrongPassword' : error.message === 'turnstile_failed' || error.message.startsWith('ts_') ? 'turnstileFail' : 'downloadFailed');
       input.select();
     } finally { pending = false; btn.disabled = false; }
   };

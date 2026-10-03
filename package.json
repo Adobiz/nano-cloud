@@ -2,11 +2,13 @@
   "name": "nano-cloud",
   "version": "1.0.0",
   "private": true,
-  "description": "nano-cloud - iOS 26 液态玻璃风格网盘分享系统 (Cloudflare Workers + R2 + D1)",
+  "description": "nano-cloud - Claude 风格的 Cloudflare Workers + R2 + D1 云盘",
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "tail": "wrangler tail"
+    "tail": "wrangler tail",
+    "check": "tsc --noEmit",
+    "test": "node --test scripts/check-downloads.mjs scripts/check-share.mjs scripts/check-global.mjs scripts/check-ui.mjs"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260925.1",

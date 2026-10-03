@@ -83,3 +83,21 @@ test('wrong passwords retain the challenge; failed challenge verification clears
     assert.equal(f.context.__tsToken,error==='bad_password'?'single-use':null);
   }
 });
+
+test('invalid saved activation codes are cleared before rendering the quota gate',async()=>{
+  const f=fixture('EXPIRED');
+  f.context.fetch=async url=>Response.json(url.includes('/status')?{usable:false,status:{status:'expired'}}:{...info,quota_exceeded:true});
+  await f.context.boot();assert.equal(f.values.has('r2pan_code'),false);assert.match(f.ids.get('app').innerHTML,/pointer-events:none/);
+});
+
+test('missing OAuth providers and Turnstile sitekeys produce explicit configuration messages',()=>{
+  const f=fixture();f.render({...info,oauth:{enabled:true,authed:false}});assert.match(f.ids.get('app').innerHTML,/登录服务未配置完整/);
+  f.render({...info,turnstile:{enabled:true,sitekey:null}});assert.match(f.ids.get('app').innerHTML,/人机验证未配置完整/);
+});
+
+test('all shipped HTML scripts parse as JavaScript',()=>{
+  for(const page of ['admin','market','share']) {
+    const source=readFileSync(new URL('../public/'+page+'.html',import.meta.url),'utf8');
+    for(const m of source.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi))new vm.Script(m[1]);
+  }
+});

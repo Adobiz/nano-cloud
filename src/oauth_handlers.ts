@@ -13,7 +13,7 @@
 
 import type { Env } from "./types";
 import { getSettings } from "./settings";
-import { decryptSecret } from "./crypto";
+import { decryptSecret, safeEqual } from "./crypto";
 import {
   getBuiltinProvider,
   BUILTIN_PROVIDERS,
@@ -88,7 +88,7 @@ export async function handleOAuthProviders(req: Request, env: Env): Promise<Resp
   const rows = await listEnabledProviders(env);
   const origin = new URL(req.url).origin;
   const providers = rows
-    .filter((r) => r.client_id) // 没有 client_id 的不能用
+    .filter((r) => r.client_id && r.client_secret_cipher && rowToProvider(r)) // 没有 client_id 的不能用
     .map((r) => {
       const p = rowToProvider(r);
       return {
@@ -107,7 +107,7 @@ export async function handleOAuthProviders(req: Request, env: Env): Promise<Resp
 export async function handleOAuthStart(req: Request, env: Env): Promise<Response> {
   const url = new URL(req.url);
   const providerDbId = url.searchParams.get("provider") || "";
-  const redirectTo = url.searchParams.get("redirect") || "/";
+  const redirectTo = safeRedirect(req, url.searchParams.get("redirect") || "/");
 
   const settings = await getSettings(env);
   if (!settings.oauthEnabled) {
@@ -118,7 +118,7 @@ export async function handleOAuthStart(req: Request, env: Env): Promise<Response
   if (!row || !row.enabled) {
     return Response.json({ error: "provider_not_found_or_disabled" }, { status: 400 });
   }
-  if (!row.client_id) {
+  if (!row.client_id || !row.client_secret_cipher) {
     return Response.json({ error: "client_id_missing" }, { status: 500 });
   }
 
@@ -139,13 +139,14 @@ export async function handleOAuthStart(req: Request, env: Env): Promise<Response
   );
 
   // 把 redirectTo 写进 Cookie
-  const cookie = `cd_oauth_redirect=${encodeURIComponent(redirectTo)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=600`;
+  const secure = url.protocol === "https:" ? "; Secure" : "";
+  const cookie = `cd_oauth_redirect=${encodeURIComponent(redirectTo)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=600${secure}`;
+  const headers = new Headers({location:authorizeUrl,"cache-control":"no-store"});
+  headers.append("set-cookie", cookie);
+  headers.append("set-cookie", `cd_oauth_state=${state}; Path=/; HttpOnly; SameSite=Lax; Max-Age=300${secure}`);
   return new Response(null, {
     status: 302,
-    headers: {
-      location: authorizeUrl,
-      "set-cookie": cookie,
-    },
+    headers,
   });
 }
 
@@ -162,28 +163,18 @@ export async function handleOAuthCallback(req: Request, env: Env): Promise<Respo
     return redirectBackWithMsg(req, "oauth_missing_code");
   }
 
+  if (!safeEqual(parseCookie(req.headers.get("cookie"), "cd_oauth_state"), state))
+    return redirectBackWithMsg(req, "oauth_state_invalid");
+
   // 1. 校验 state（一次性消费 + TTL）
   const verify = await verifyOAuthState(env, state);
   if (!verify.ok || !verify.provider_id) {
     return redirectBackWithMsg(req, "oauth_state_invalid");
   }
 
-  // 从 state 拿的是 provider_type（github/google...），我们需要回查 Db 里对应的 enabled provider
-  // 但 state 存的是 provider_type，可能有多个同类型 provider。我们改用：state 里存 db id
-  // 让我们调整 state 里的 provider_id 语义 —— 现在的 createOAuthState 存 provider_type
-  // 改为存 db id
-  // 但改动 createOAuthState 会影响 state 结构...让我们看看 state 表
-  // CREATE TABLE oauth_states(state TEXT, provider_id TEXT, redirect_uri TEXT, expires_at INTEGER)
-  // provider_id 现在存的是 provider_type。我们改成存 db id。
-  // 但 handleOAuthStart 里已经在 createOAuthState 时用了 provider_type。
-  // 让我们改 handleOAuthStart 的调用：createOAuthState(env, providerDbId, redirectUri)
-  // 然后这里直接 fetchProviderRow(env, verify.provider_id) 即可
-  // （我们已经在 handleOAuthStart 里把 providerDbId 传进去了，看看：）
-
-  // 好，现在 provider_id 字段存的是 D1 里的 provider db id，直接查
   const providerDbId = verify.provider_id;
   const row = await fetchProviderRow(env, providerDbId);
-  if (!row) {
+  if (!row || !row.enabled || !(await getSettings(env)).oauthEnabled) {
     return redirectBackWithMsg(req, "oauth_provider_missing");
   }
   const provider = rowToProvider(row);
@@ -216,20 +207,18 @@ export async function handleOAuthCallback(req: Request, env: Env): Promise<Respo
   // 5. 发 OAuth 会话 Cookie
   // cookie 里存的是 db id，方便 later check 时知道用的是哪个 provider
   const { cookie, secure } = await signOAuthSession(env, providerDbId, user.id);
-  const originalRedirect = parseCookie(req.headers.get("cookie"), "cd_oauth_redirect") || "/";
+  const originalRedirect = safeRedirect(req, parseCookie(req.headers.get("cookie"), "cd_oauth_redirect") || "/");
 
   const setCookieParts: string[] = [cookie, "Path=/", "HttpOnly", "SameSite=Lax", "Max-Age=3600"];
   if (url.protocol === "https:" && secure) setCookieParts.push("Secure");
   const setCookie = setCookieParts.join("; ");
   const clearRedirect = "cd_oauth_redirect=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0";
 
-  return new Response(null, {
-    status: 302,
-    headers: {
-      location: originalRedirect,
-      "set-cookie": [setCookie, clearRedirect].join(", "),
-    },
-  });
+  const headers = new Headers({location:originalRedirect,"cache-control":"no-store"});
+  headers.append("set-cookie", setCookie);
+  headers.append("set-cookie", clearRedirect);
+  headers.append("set-cookie", "cd_oauth_state=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0");
+  return new Response(null, {status:302, headers});
 }
 
 /* ═══════════ GET /oauth/session ═══════════ */
@@ -269,12 +258,20 @@ function parseCookie(header: string | null, name: string): string {
   if (!header) return "";
   const re = new RegExp(`(?:^|;\\s*)${name}=([^;]*)`);
   const m = re.exec(header);
-  return m ? decodeURIComponent(m[1]) : "";
+  try {return m ? decodeURIComponent(m[1]) : "";} catch {return "";}
+}
+
+function safeRedirect(req: Request, path: string): string {
+  try {
+    const url = new URL(path, req.url);
+    if (url.origin !== new URL(req.url).origin || url.username || url.password) return "/";
+    return url.pathname + url.search + url.hash;
+  } catch {return "/";}
 }
 
 function redirectBackWithMsg(req: Request, msg: string): Response {
   const redirectTo = parseCookie(req.headers.get("cookie"), "cd_oauth_redirect") || "/";
-  const url = new URL(redirectTo, "https://localhost");
+  const url = new URL(safeRedirect(req, redirectTo), req.url);
   url.searchParams.set("oauth_error", msg);
   const setCookie = "cd_oauth_redirect=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0";
   return new Response(null, {
@@ -282,6 +279,7 @@ function redirectBackWithMsg(req: Request, msg: string): Response {
     headers: {
       location: `${url.pathname}${url.search}`,
       "set-cookie": setCookie,
+      "cache-control": "no-store",
     },
   });
 }

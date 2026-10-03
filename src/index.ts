@@ -1,3 +1,4 @@
+import { integer } from "./input";
 import type { Env } from "./types";
 import { ensureSchema } from "./db";
 import { handleAdminApi } from "./admin";
@@ -44,6 +45,7 @@ function checkRateLimit(ip: string): { ok: boolean; retryAfterSec?: number } {
   if (entry.bannedUntil > now) {
     return { ok: false, retryAfterSec: Math.ceil((entry.bannedUntil - now) / 1000) };
   }
+  entry.bannedUntil = 0;
   // 重置窗口
   if (now - entry.windowStart > RATE_LIMIT_WINDOW_MS) {
     entry.count = 0;
@@ -96,7 +98,7 @@ async function route(req: Request, env: Env, ctx: ExecutionContext): Promise<Res
   }
 
   // 管理后台页面（/admin/apple 是隐藏的 Apple 玻璃风）
-  if (path === "/admin" || path === "/admin/" || path.startsWith("/admin/apple")) {
+  if (path === "/admin" || path === "/admin/" || /^\/admin\/apple(?:\/|$)/.test(path)) {
     return serveAdminPage();
   }
 
@@ -120,7 +122,7 @@ async function route(req: Request, env: Env, ctx: ExecutionContext): Promise<Res
   if (path === "/oauth/session" && req.method === "GET") {
     return handleOAuthSession(req, env);
   }
-  if (path === "/oauth/logout" && (req.method === "POST" || req.method === "GET")) {
+  if (path === "/oauth/logout" && req.method === "POST") {
     return handleOAuthLogout(req);
   }
 
@@ -174,8 +176,8 @@ async function route(req: Request, env: Env, ctx: ExecutionContext): Promise<Res
   if (path === "/api/market" && req.method === "GET") {
     await ensureSchema(env);
     const url = new URL(req.url);
-    const page = Math.max(1, Number(url.searchParams.get("page")) || 1);
-    const perPage = Math.min(50, Math.max(6, Number(url.searchParams.get("size")) || 12));
+    const page = integer(url.searchParams.get("page"), 1, 1, 1_000_000);
+    const perPage = integer(url.searchParams.get("size"), 12, 6, 50);
     const q = url.searchParams.get("q")?.trim();
     const sort = url.searchParams.get("sort") || "hot"; // hot | newest | downloads | views
     const now = Date.now();
@@ -183,7 +185,7 @@ async function route(req: Request, env: Env, ctx: ExecutionContext): Promise<Res
     // ⚠️ SQLite + D1 只支持纯 ? 占位符，不支持 ?N1 / ?Q1 / ?2 这类扩展语法
     const activeFilter = ` AND s.is_market = 1 AND s.revoked = 0
       AND (s.expires_at IS NULL OR s.expires_at > ?)
-      AND (s.max_downloads IS NULL OR s.download_count < s.max_downloads)
+      AND (s.max_downloads IS NULL OR s.max_downloads = 0 OR s.download_count < s.max_downloads)
       AND s.password_hash IS NULL`;
     // SQL LIKE 通配符转义：把用户输入中的 \ % _ 都转义，防止用户靠输入 % 列出所有文件
     const qEsc = q ? q.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_") : null;
@@ -245,6 +247,7 @@ async function route(req: Request, env: Env, ctx: ExecutionContext): Promise<Res
       return serveSharePage(req);
     }
     if (sub === "/info") {
+      if(req.method !== "GET") return new Response("Method Not Allowed", {status:405});
       return handleShareInfo(req, env, token);
     }
     if (sub === "/verify") {
@@ -281,7 +284,7 @@ async function route(req: Request, env: Env, ctx: ExecutionContext): Promise<Res
   // WebDAV 服务 —— 挂载点 /webdav/*
   // 通过 HTTP Basic Auth 保护，启用后可在 Finder/Explorer 等直接挂载
   // ══════════════════════════════════════════════════════════════
-  if (path.startsWith("/webdav")) {
+  if (/^\/webdav(?:\/|$)/.test(path)) {
     await ensureSchema(env);
     const { handleWebDAV } = await import("./webdav");
     return handleWebDAV(req, env, ctx);

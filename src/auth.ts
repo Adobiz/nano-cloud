@@ -89,7 +89,8 @@ export function clientIp(req: Request): string {
 
 /** IPv4 字符串 → 32 位无符号整数 */
 function ipv4ToInt(ip: string): number | null {
-  const parts = ip.split(".").map((p) => parseInt(p, 10));
+  if (!/^\d{1,3}(?:\.\d{1,3}){3}$/.test(ip)) return null;
+  const parts = ip.split(".").map(Number);
   if (parts.length !== 4 || parts.some((p) => isNaN(p) || p < 0 || p > 255)) return null;
   return ((parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3]) >>> 0;
 }
@@ -107,6 +108,10 @@ export function ipMatchesList(ip: string, listStr: string): boolean {
     // 精确匹配
     if (entry === ip) return true;
 
+    if (entry.includes("*")) {
+      const parts = entry.split("."), target = ip.split(".");
+      if (parts.length === 4 && ipv4ToInt(ip) !== null && parts.every((p,i) => p === "*" || (/^\d{1,3}$/.test(p) && Number(p) <= 255 && Number(p) === Number(target[i])))) return true;
+    }
     // CIDR 匹配（仅 IPv4）
     const cidr = entry.match(/^(\d{1,3}(?:\.\d{1,3}){3})\/(\d{1,2})$/);
     if (cidr) {

@@ -37,7 +37,7 @@ A lightweight file-sharing drive built on Cloudflare Workers, R2 and D1, with S3
 - Download logs, daily traffic and country distribution, with optional Analytics Engine.
 - Chinese/English, responsive layouts and light/dark admin themes.
 
-Production code has no npm runtime dependencies. This version updates upstream styling and branding, with targeted fixes for admin JavaScript, sharing, global distribution, traffic accounting and prepaid activation quotas. Other reviewed issues still require separate fixes.
+Production code has no npm runtime dependencies. This version updates upstream styling and branding, with targeted fixes for admin JavaScript, sharing, global distribution, traffic accounting and prepaid activation quotas. It also fixes concurrent limits, storage changes, WebDAV operations, OAuth callbacks and database migrations.
 
 ## Getting started
 
@@ -58,6 +58,18 @@ npm run dev -- --local --config wrangler.jsonc
 ```
 
 Open [http://localhost:8787/admin](http://localhost:8787/admin). The current configuration declares D1/R2 bindings, allowing Wrangler to emulate them locally. Database initialization runs on first access. Do not commit `.dev.vars`.
+
+## Regression checks
+
+Use Node.js 24 or newer. The tests use in-memory SQLite and fake storage/API responses without connecting to a Cloudflare account.
+
+```bash
+npm run check
+npm test
+npx wrangler deploy --dry-run --config wrangler.jsonc
+```
+
+After deployment, verify share/password downloads, activation quotas, concurrent limits, remote storage, WebDAV mounting and file operations, OAuth callbacks and traffic statistics.
 
 ## Deployment
 
@@ -125,7 +137,7 @@ Routes: `/admin`, `/market`, `/s/:token`, `/d/:token` and `/webdav/`.
 
 ## Acknowledgments
 
-nano-cloud is based on [Admin666pro/cloud-r2pan](https://github.com/Admin666pro/cloud-r2pan). Thank you to **Admin666pro** for the Workers/R2/D1 architecture, file sharing, authentication and storage implementations. This version retains upstream business logic with updated interface styles and branding. The README layout follows FlareDrive.
+nano-cloud is based on [Admin666pro/cloud-r2pan](https://github.com/Admin666pro/cloud-r2pan). Thank you to **Admin666pro** for the Workers/R2/D1 architecture, file sharing, authentication and storage implementations. This version builds on the upstream architecture, updates the interface and branding, and fixes download, authentication, storage and accounting flows. The README layout follows FlareDrive.
 
 ## License
 

@@ -223,6 +223,39 @@ function bufToHex(buf: ArrayBuffer): string {
   return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+function decodeXml(value: string): string {
+  return value.replace(/&(#x[0-9a-f]+|#\d+|amp|lt|gt|quot|apos);/gi, (entity, code: string) => {
+    const named: Record<string, string> = {amp:"&",lt:"<",gt:">",quot:'"',apos:"'"};
+    if (named[code]) return named[code];
+    const n = code.startsWith("#x") ? parseInt(code.slice(2),16) : Number(code.slice(1));
+    return Number.isInteger(n) && n >= 0 && n <= 0x10ffff ? String.fromCodePoint(n) : entity;
+  });
+}
+function contentLength(response: Response): number {
+  const value = response.headers.get("content-length");
+  const n = value === null ? NaN : Number(value);
+  if (!Number.isSafeInteger(n) || n < 0) throw new Error("Storage did not return a valid Content-Length");
+  return n;
+}
+async function remoteObject(response: Response, range?: {offset: number; length?: number}): Promise<StorageObject> {
+  try {
+    const length = contentLength(response);
+    let size = length;
+    if (range) {
+      const match = /^bytes (\d+)-(\d+)\/(\d+)$/.exec(response.headers.get("content-range") || "");
+      if (response.status !== 206 || !match) throw new Error("Storage ignored the requested byte range");
+      const start = Number(match[1]), end = Number(match[2]), total = Number(match[3]);
+      const expected = range.length === undefined ? total - start : range.length;
+      if (![start,end,total].every(Number.isSafeInteger) || start !== range.offset ||
+          end < start || end >= total || end - start + 1 !== expected || length !== expected)
+        throw new Error("Storage returned an inconsistent byte range");
+      size = total;
+    } else if (response.status !== 200) throw new Error("Storage returned an unexpected partial response");
+    if (!response.body) throw new Error("Storage returned no file body");
+    return {body:response.body,size,contentType:response.headers.get("content-type") || "application/octet-stream",etag:response.headers.get("etag") || ""};
+  } catch(error) {await response.body?.cancel().catch(()=>{});throw error;}
+}
+
 /**
  * 极简 XML 解析器 —— 专用于 S3 ListObjectsV2 返回
  * 不做通用解析，只提取 ListBucketResult 下的 Contents + CommonPrefixes + IsTruncated + NextContinuationToken
@@ -234,7 +267,7 @@ function parseS3ListXml(xml: string, prefix: string): StorageListResult {
   const cpRe = /<CommonPrefixes>[\s\S]*?<Prefix>([^<]*?)<\/Prefix>[\s\S]*?<\/CommonPrefixes>/g;
   let m: RegExpExecArray | null;
   while ((m = cpRe.exec(xml)) !== null) {
-    const dirKey = m[1]; // 形如 "photos/"
+    const dirKey = decodeXml(m[1]); // 形如 "photos/"
     const name = prefix && dirKey.startsWith(prefix) ? dirKey.slice(prefix.length) : dirKey;
     entries.push({ key: dirKey, name, size: 0, lastModified: 0, isDir: true });
   }
@@ -247,7 +280,7 @@ function parseS3ListXml(xml: string, prefix: string): StorageListResult {
     const sizeMatch = block.match(/<Size>(\d+)<\/Size>/);
     const lmMatch = block.match(/<LastModified>([^<]*?)<\/LastModified>/);
     if (!keyMatch) continue;
-    const key = keyMatch[1];
+    const key = decodeXml(keyMatch[1]);
     const name = prefix && key.startsWith(prefix) ? key.slice(prefix.length) : key;
     const size = sizeMatch ? parseInt(sizeMatch[1]!, 10) : 0;
     let lastModified = 0;
@@ -267,7 +300,7 @@ function parseS3ListXml(xml: string, prefix: string): StorageListResult {
   return {
     entries,
     truncated,
-    nextMarker: truncated && nctMatch ? nctMatch[1] : undefined,
+    nextMarker: truncated && nctMatch ? decodeXml(nctMatch[1]) : undefined,
   };
 }
 
@@ -407,10 +440,9 @@ export function createS3Provider(cfg: S3Config): StorageProvider {
         const text = await resp.text().catch(() => resp.statusText);
         throw new Error(`S3 PUT failed: ${resp.status} ${text}`);
       }
-      const size = body instanceof Uint8Array ? body.byteLength
-        : body instanceof ArrayBuffer ? body.byteLength
-        : body instanceof ReadableStream ? -1 : 0;
-      return { size: size >= 0 ? size : 0, etag: resp.headers.get("etag")?.replace(/"/g, "") || undefined };
+      const size = body instanceof Uint8Array ? body.byteLength : body instanceof ArrayBuffer ? body.byteLength
+        : contentLength(await doFetch("HEAD", key, {}));
+      return { size, etag: resp.headers.get("etag")?.replace(/"/g, "") || undefined };
     },
 
     async get(key, range) {
@@ -430,14 +462,7 @@ export function createS3Provider(cfg: S3Config): StorageProvider {
         const text = await resp.text().catch(() => resp.statusText);
         throw new Error(`S3 GET failed: ${resp.status} ${text}`);
       }
-      const sizeStr = resp.headers.get("Content-Length") || resp.headers.get("x-amz-meta-size") || "0";
-      const size = parseInt(sizeStr, 10) || 0;
-      return {
-        body: resp.body!,
-        size,
-        contentType: resp.headers.get("Content-Type") || "application/octet-stream",
-        etag: resp.headers.get("ETag") || "",
-      };
+      return remoteObject(resp, range);
     },
 
     async delete(key) {
@@ -453,7 +478,7 @@ export function createS3Provider(cfg: S3Config): StorageProvider {
       const resp = await doFetch("HEAD", key, {});
       if (resp.status === 404 || resp.status === 403) return null;
       if (!resp.ok) return null;
-      const size = parseInt(resp.headers.get("Content-Length") || "0", 10) || 0;
+      const size = contentLength(resp);
       return {
         size,
         contentType: resp.headers.get("Content-Type") || "application/octet-stream",
@@ -467,7 +492,7 @@ export function createS3Provider(cfg: S3Config): StorageProvider {
       query.set("delimiter", "/");
       query.set("max-keys", String(limit));
       if (prefix) query.set("prefix", prefix);
-      if (opts.marker) query.set("start-after", opts.marker);
+      if (opts.marker) query.set("continuation-token", opts.marker);
 
       // ListObjectsV2 是对 bucket 本身发 GET，key 为空串
       const resp = await doFetch("GET", "", { query });
@@ -544,7 +569,8 @@ function parseWebdavPropfind(xml: string, baseUrlPath: string): StorageListResul
   }
 
   for (const block of responseBlocks) {
-    const href = extractTag(block, "href");
+    const rawHref = extractTag(block, "href");
+    const href = rawHref ? decodeXml(rawHref) : null;
     if (!href) continue;
 
     // 跳过 "." 或空 href
@@ -559,9 +585,11 @@ function parseWebdavPropfind(xml: string, baseUrlPath: string): StorageListResul
       // 已经是绝对路径
     }
     // 去掉 basePath 前缀
+    if (!(key === basePath || key.startsWith(basePath + "/"))) continue;
     if (key.startsWith(basePath)) {
       key = key.slice(basePath.length);
     }
+    try {key = decodeURIComponent(key);} catch {continue;}
     key = key.replace(/^\//, "");
     if (!key) continue;
 
@@ -602,6 +630,7 @@ function parseWebdavPropfind(xml: string, baseUrlPath: string): StorageListResul
 function buildWebdavUrl(baseUrl: string, key: string): string {
   const base = baseUrl.replace(/\/+$/, "");
   const safeKey = key.replace(/^\//, "");
+  if (safeKey.includes("\0") || safeKey.includes("\\") || safeKey.split("/").some(p => p === "." || p === "..")) throw new Error("Invalid WebDAV object key");
   // 手动编码 key 里的路径段（保留 /）
   const encoded = safeKey.split("/").map(encodeURIComponent).join("/");
   if (!safeKey) return base + "/";
@@ -610,7 +639,7 @@ function buildWebdavUrl(baseUrl: string, key: string): string {
 
 /** 构造 Basic Auth header */
 function webdavAuth(username: string, password: string): string {
-  const token = btoa(username + ":" + password);
+  const token = btoa(Array.from(new TextEncoder().encode(username + ":" + password), b => String.fromCharCode(b)).join(""));
   return "Basic " + token;
 }
 
@@ -665,9 +694,8 @@ export function createWebDAVProvider(cfg: WebDAVConfig): StorageProvider {
       }
 
       const resp = await doFetch("PUT", key, { headers: hdrs, body: body as any });
-      const size = body instanceof Uint8Array ? body.byteLength
-        : body instanceof ArrayBuffer ? body.byteLength
-        : 0;
+      const size = body instanceof Uint8Array ? body.byteLength : body instanceof ArrayBuffer ? body.byteLength
+        : contentLength(await doFetch("HEAD", key));
       return { size, etag: resp.headers.get("etag") || undefined };
     },
 
@@ -686,24 +714,18 @@ export function createWebDAVProvider(cfg: WebDAVConfig): StorageProvider {
       if (resp.status === 404 || resp.status === 403) return null;
       if (!resp.ok) throw new Error(`WebDAV GET failed: ${resp.status}`);
 
-      const sizeStr = resp.headers.get("Content-Length") || "0";
-      return {
-        body: resp.body!,
-        size: parseInt(sizeStr, 10) || 0,
-        contentType: resp.headers.get("Content-Type") || "application/octet-stream",
-        etag: resp.headers.get("ETag") || "",
-      };
+      return remoteObject(resp, range);
     },
 
     async delete(key) {
-      await doFetch("DELETE", key, { expected: [200, 204, 207, 404], noThrow: true });
+      await doFetch("DELETE", key, { expected: [200, 204, 404] });
     },
 
     async head(key) {
       const resp = await doFetch("HEAD", key, { expected: [200, 207, 404, 403], noThrow: true });
       if (resp.status === 404 || resp.status === 403) return null;
       if (!resp.ok) return null;
-      const size = parseInt(resp.headers.get("Content-Length") || "0", 10) || 0;
+      const size = contentLength(resp);
       return { size, contentType: resp.headers.get("Content-Type") || "application/octet-stream" };
     },
 
@@ -727,12 +749,14 @@ export function createWebDAVProvider(cfg: WebDAVConfig): StorageProvider {
       const result = parseWebdavPropfind(xmlText, baseUrlPath);
 
       // PROPFIND 会返回当前目录自身（href = base），过滤掉
-      result.entries = result.entries.filter(e => e.key !== prefix.replace(/\/$/, ""));
+      result.entries = result.entries.filter(e => e.key.replace(/\/$/, "") !== prefix.replace(/\/$/, ""));
 
-      // limit 截断
+      result.entries.sort((a,b) => a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
+      if (opts.marker) result.entries = result.entries.filter(e => e.key > opts.marker!);
       if (result.entries.length > limit) {
         result.entries = result.entries.slice(0, limit);
         result.truncated = true;
+        result.nextMarker = result.entries[result.entries.length - 1].key;
       }
 
       return result;
@@ -765,8 +789,9 @@ export async function createStorageProvider(
   }
 ): Promise<StorageProvider> {
   // ① WebDAV
-  const useWebdav = settings.storageProvider === "webdav" && settings.storageWebdavUrl && settings.storageWebdavUsername;
+  const useWebdav = settings.storageProvider === "webdav";
   if (useWebdav) {
+    if (!settings.storageWebdavUrl || !settings.storageWebdavUsername) throw new Error("Storage: incomplete WebDAV configuration");
     const password = settings.storageWebdavPasswordCipher
       ? await decryptSecret(settings.storageWebdavPasswordCipher, env.admin)
       : null;
@@ -778,16 +803,13 @@ export async function createStorageProvider(
     });
   }
   // ② S3
-  const useS3 = settings.storageProvider === "s3" && settings.s3Endpoint && settings.s3Bucket;
+  const useS3 = settings.storageProvider === "s3";
   if (useS3) {
+    if (!settings.s3Endpoint || !settings.s3Bucket || !settings.s3AccessKeyId) throw new Error("Storage: incomplete S3 configuration");
     const secretAccessKey = settings.s3SecretKeyCipher
       ? await decryptSecret(settings.s3SecretKeyCipher, env.admin)
       : null;
-    if (!secretAccessKey || !settings.s3AccessKeyId) {
-      // S3 配置不完整，回退到 R2
-      if (!env.r2) throw new Error("Storage: S3 config incomplete and no R2 binding available");
-      return createR2Provider(env.r2);
-    }
+    if (!secretAccessKey) throw new Error("Storage: S3 secret not configured");
     return createS3Provider({
       endpoint: settings.s3Endpoint!,
       region: settings.s3Region || "us-east-1",

@@ -13,9 +13,12 @@ import type { Env } from "./types";
 const SETTINGS_CACHE_TTL_MS = 5_000; // 5 秒
 let _cachedSettings: Settings | null = null;
 let _cachedAt = 0;
+let _cachedDb: D1Database | null = null;
+let _generation = 0;
 
 /** 主动失效缓存 —— updateSettings 后调用 */
 export function invalidateSettingsCache(): void {
+  _generation++;
   _cachedSettings = null;
   _cachedAt = 0;
 }
@@ -200,10 +203,12 @@ function toInt(v: unknown, fallback: number): number {
 export async function getSettings(env: Env): Promise<Settings> {
   // ① 命中内存缓存 —— 5 秒内直接返回，零 D1 开销
   const now = Date.now();
-  if (_cachedSettings && now - _cachedAt < SETTINGS_CACHE_TTL_MS) {
+  if (_cachedSettings && _cachedDb === env.db && now - _cachedAt < SETTINGS_CACHE_TTL_MS &&
+      _cachedSettings.trafficMonth === new Date(now).toISOString().slice(0, 7)) {
     return _cachedSettings;
   }
 
+  const generation = _generation;
   const { results } = await env.db.prepare(
     "SELECT key, value FROM settings"
   ).all<{ key: string; value: string }>();
@@ -217,7 +222,7 @@ export async function getSettings(env: Env): Promise<Settings> {
   const storedMonth = map.get("traffic_month") ?? "";
   let trafficUsedBytes = toInt(map.get("traffic_used_bytes"), 0);
   let trafficMonth = storedMonth;
-  if (storedMonth && storedMonth !== currentMonth && trafficUsedBytes > 0) {
+  if (storedMonth !== currentMonth) {
     trafficUsedBytes = 0;
     trafficMonth = currentMonth;
   }
@@ -275,8 +280,11 @@ export async function getSettings(env: Env): Promise<Settings> {
   };
 
   // ② 写入内存缓存
-  _cachedSettings = result;
-  _cachedAt = Date.now();
+  if (generation === _generation) {
+    _cachedSettings = result;
+    _cachedDb = env.db;
+    _cachedAt = Date.now();
+  }
   return result;
 }
 

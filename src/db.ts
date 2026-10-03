@@ -170,7 +170,8 @@ export const EXPECTED_TABLES = [
   "directories",
 ];
 
-let schemaReady = false;
+const schemaReady = new WeakSet<D1Database>();
+const schemaPending = new WeakMap<D1Database, Promise<void>>();
 
 /**
  * 确保数据库表结构存在 —— 首次请求时自动建表，无需手动迁移。
@@ -217,33 +218,33 @@ async function runMigrations(env: Env): Promise<void> {
     const row: any = await env.db.prepare(
       "SELECT value FROM settings WHERE key = 'migration_version'"
     ).first();
-    if (row?.value) version = Number(row.value) - 1; // 存的是 len（已执行数量），转成下标
+    if (row?.value && Number.isSafeInteger(Number(row.value)) && Number(row.value) >= 0) version = Number(row.value) - 1; // 存的是 len（已执行数量），转成下标
   } catch {
     // settings 表可能还不存在（首次部署），这时候全跑一遍
   }
 
   if (version >= MIGRATION_STATEMENTS.length - 1) return; // 最新
 
-  // 只跑 version+1 之后的迁移
   for (let i = version + 1; i < MIGRATION_STATEMENTS.length; i++) {
-    try {
-      await env.db.prepare(MIGRATION_STATEMENTS[i]).run();
-    } catch {
-      /* 列/索引已存在，忽略（保持幂等兜底） */
+    try {await env.db.prepare(MIGRATION_STATEMENTS[i]).run();}
+    catch(error) {
+      if(!/duplicate column name|already exists/i.test(String(error))) throw error;
     }
-  }
-
-  // 写入新版本（存数量，不是下标）
-  try {
-    await env.db.prepare(
-      "INSERT INTO settings(key, value) VALUES('migration_version', ?1) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
-    ).bind(String(MIGRATION_STATEMENTS.length)).run();
-  } catch {
-    /* settings 表不存在时忽略 */
+    await env.db.prepare(`INSERT INTO settings(key,value) VALUES('migration_version',?1)
+      ON CONFLICT(key) DO UPDATE SET value=CAST(MAX(CAST(settings.value AS INTEGER),CAST(excluded.value AS INTEGER)) AS TEXT)`)
+      .bind(String(i+1)).run();
   }
 }
 
 export async function ensureSchema(env: Env): Promise<void> {
+  if(!env.db) return initializeSchema(env);
+  const pending = schemaPending.get(env.db);
+  if(pending) return pending;
+  const promise = initializeSchema(env);
+  schemaPending.set(env.db,promise);
+  try {await promise;} finally {schemaPending.delete(env.db);}
+}
+async function initializeSchema(env: Env): Promise<void> {
   // ① 防御性检查：如果数据库绑定不存在，直接报错
   if (!env.db) {
     throw new Error("Database binding 'db' is not configured. " +
@@ -253,7 +254,7 @@ export async function ensureSchema(env: Env): Promise<void> {
 
   // ② 内存短路 —— 本 isolate 已确认过 schema + 迁移都就绪，直接返回，零成本
   //    Worker 冷启动 / isolate 重启时 schemaReady=false，会重新跑一遍
-  if (schemaReady) return;
+  if (schemaReady.has(env.db)) return;
 
   // ③ 跨 Isolate 安全检测：用 sqlite_master 检查所有预期的表是否都存在
   let needCreate = false;
@@ -272,7 +273,7 @@ export async function ensureSchema(env: Env): Promise<void> {
     // ④ 真正的建表路径（首次部署 / 升级后新增表 / 库被清空时触发）
     // 用 try/catch 处理极端竞态：另一个 Isolate 刚好也在执行 DDL
     try {
-      await env.db.batch(SCHEMA_STATEMENTS.map((sql) => env.db.prepare(sql)));
+      await env.db.batch(SCHEMA_STATEMENTS.filter(sql => !/^CREATE INDEX/.test(sql)).map(sql => env.db.prepare(sql)));
     } catch {
       // 竞态兜底：可能另一个 Isolate 刚建完表。
       // 再检测一次，确认表都存在就算成功
@@ -294,7 +295,8 @@ export async function ensureSchema(env: Env): Promise<void> {
   // ⑤ 跑增量迁移（幂等，只跑未执行过的）
   await runMigrations(env);
 
-  schemaReady = true;
+  await env.db.batch([...SCHEMA_STATEMENTS, ...MIGRATION_STATEMENTS].filter(sql => /^CREATE INDEX/.test(sql)).map(sql => env.db.prepare(sql)));
+  schemaReady.add(env.db);
 }
 
 /** 生成 URL 安全的随机 ID */
@@ -443,10 +445,12 @@ export async function repairDatabase(env: Env): Promise<RepairResult> {
     if (!env.db) throw new Error("Database binding 'db' is not configured");
 
     // 强制让 ensureSchema 重新跑一遍 —— 先把内存短路清掉
-    schemaReady = false;
+    schemaReady.delete(env.db);
 
     // ── Step 1: 先记录修复前缺什么 —— 修复后对比就能知道 "新增了什么" ──
     const before = await getSchemaStatus(env);
+
+    if(!before.tables.missing.includes("settings")) await env.db.prepare("UPDATE settings SET value='0' WHERE key='migration_version'").run();
 
     // ── Step 2: 跑完整 ensureSchema ──
     await ensureSchema(env);

@@ -16,6 +16,7 @@
  * 存储：复用 StorageProvider（R2 / S3），文件元数据存 D1 files 表，目录存 directories 表
  */
 
+import { parseRange } from "./range";
 import type { Env } from "./types";
 import { getSettings } from "./settings";
 import { sha256Hex, safeEqual, randomHex } from "./crypto";
@@ -23,15 +24,8 @@ import { createStorageProvider, type StorageProvider } from "./storage";
 import { randomId } from "./db";
 
 /* ═══════════ 懒加载 StorageProvider ═══════════ */
-let _storagePromise: Promise<StorageProvider> | null = null;
 async function storage(env: Env): Promise<StorageProvider> {
-  if (!_storagePromise) {
-    _storagePromise = (async () => {
-      const s = await getSettings(env);
-      return createStorageProvider(env, s);
-    })();
-  }
-  return _storagePromise;
+  return createStorageProvider(env, await getSettings(env));
 }
 
 /* ═══════════ 工具函数 ═══════════ */
@@ -61,10 +55,11 @@ function extractInternalPath(urlPath: string): string {
 }
 
 /** 从完整 URL 构建 WebDAV href（用于 PROPFIND 响应） */
-function buildHref(baseUrl: string, internalPath: string): string {
+function buildHref(baseUrl: string, internalPath: string, directory = false): string {
   const u = new URL(baseUrl);
   const clean = internalPath === "/" ? "" : internalPath;
-  return `${u.origin}/webdav${clean}/`;
+  const encoded = clean.split("/").map(encodeURIComponent).join("/");
+  return `${u.origin}/webdav${encoded}${directory || !clean ? "/" : ""}`;
 }
 
 /** RFC 1123 日期格式 */
@@ -83,7 +78,8 @@ function tsToRfc1123(ts: number): string {
 function parseBasicAuth(authHeader: string | null): { username: string; password: string } | null {
   if (!authHeader || !authHeader.startsWith("Basic ")) return null;
   try {
-    const decoded = atob(authHeader.slice(6));
+    const raw = atob(authHeader.slice(6));
+    const decoded = new TextDecoder("utf-8", {fatal:true,ignoreBOM:false}).decode(Uint8Array.from(raw, c => c.charCodeAt(0)));
     const i = decoded.indexOf(":");
     if (i < 0) return null;
     return { username: decoded.slice(0, i), password: decoded.slice(i + 1) };
@@ -124,34 +120,26 @@ interface DBFile {
   uploaded_at: number;
 }
 
-/** 查找一个文件（精确 path + name） */
-async function findFile(env: Env, dir: string, name: string): Promise<DBFile | null> {
-  const path = dir === "/" ? `/${name}` : `${dir}/${name}`;
-  return await env.db
-    .prepare("SELECT id, key, name, size, mime, path, uploaded_at FROM files WHERE path = ?1 AND name = ?2")
-    .bind(path, name)
-    .first<DBFile>();
+const FILE_PATH_SQL = `CASE WHEN path = '/' THEN '/' || name
+  WHEN substr(path, -length(name)-1) = '/' || name THEN path
+  ELSE rtrim(path, '/') || '/' || name END`;
+function filePath(file: DBFile): string {
+  return file.path.endsWith("/" + file.name) ? file.path :
+    (file.path === "/" ? "" : file.path.replace(/\/$/, "")) + "/" + file.name;
 }
-
-/** 查找目录是否存在（directories 表 或 有文件直接在其中） */
+async function findFile(env: Env, dir: string, name: string): Promise<DBFile | null> {
+  const full = (dir === "/" ? "" : dir) + "/" + name;
+  const row = await env.db.prepare(`SELECT * FROM files WHERE (${FILE_PATH_SQL}) = ?1 AND name = ?2`)
+    .bind(full, name).first<DBFile>();
+  return row ? {...row, path: filePath(row)} : null;
+}
 async function directoryExists(env: Env, path: string): Promise<boolean> {
-  path = path === "/" ? "/" : path.replace(/\/$/, "");
-  if (path === "/") return true; // 根目录永远存在
-  // directories 表
-  const dir: any = await env.db.prepare("SELECT 1 FROM directories WHERE path = ?1").bind(path).first();
+  if (path === "/") return true;
+  const dir = await env.db.prepare("SELECT 1 FROM directories WHERE path = ?1 OR substr(path, 1, length(?2)) = ?2 LIMIT 1")
+    .bind(path, path + "/").first();
   if (dir) return true;
-  // 有文件直接在这个目录下（不是子目录）
-  const child: any = await env.db
-    .prepare("SELECT 1 FROM files WHERE path = ?1 LIMIT 1")
-    .bind(path)
-    .first();
-  if (child) return true;
-  // 有文件以这个目录开头（更深层）—— 也算存在
-  const deeper: any = await env.db
-    .prepare("SELECT 1 FROM files WHERE substr(path, 1, length(?1)) = ?1 LIMIT 1")
-    .bind(path + "/")
-    .first();
-  return !!deeper;
+  return !!await env.db.prepare(`SELECT 1 FROM files WHERE substr((${FILE_PATH_SQL}), 1, length(?1)) = ?1 LIMIT 1`)
+    .bind(path + "/").first();
 }
 
 /** 列出目录的直接子项（文件 + 子目录） */
@@ -161,7 +149,7 @@ async function listDirChildren(env: Env, path: string): Promise<{ files: DBFile[
 
   // 1. 直接子文件：path = 父路径 + "/" + name（精确）
   const { results: files } = await env.db
-    .prepare("SELECT id, key, name, size, mime, path, uploaded_at FROM files WHERE substr(path, 1, length(?1)) = ?1")
+    .prepare(`SELECT id, key, name, size, mime, (${FILE_PATH_SQL}) AS path, uploaded_at FROM files WHERE substr((${FILE_PATH_SQL}), 1, length(?1)) = ?1`)
     .bind(path === "" ? "/" : path + "/")
     .all<DBFile>();
 
@@ -208,7 +196,7 @@ async function listDirChildren(env: Env, path: string): Promise<{ files: DBFile[
       const parts = d.path.split("/").filter(Boolean);
       if (parts.length >= 1) subDirSet.add("/" + parts[0]);
     } else {
-      const rest = d.path.slice(nextSlash.length - 1);
+      const rest = d.path.slice(nextSlash.length);
       if (!rest) continue;
       const slashIdx = rest.indexOf("/");
       if (slashIdx < 0) {
@@ -234,34 +222,6 @@ function escapeXml(s: string): string {
 }
 
 /** 为单个文件生成 propstat XML */
-function filePropstat(file: DBFile, href: string): string {
-  const displayName = escapeXml(file.name);
-  const mime = escapeXml(file.mime || "application/octet-stream");
-  const lastModified = tsToRfc1123(file.uploaded_at);
-  const creationDate = new Date(file.uploaded_at).toISOString();
-  return `
-  <response>
-    <href>${escapeXml(href)}</href>
-    <propstat>
-      <prop>
-        <resourcetype><collection/></resourcetype>
-      </prop>
-      <status>HTTP/1.1 200 OK</status>
-    </propstat>
-    <propstat>
-      <prop>
-        <getcontentlength>${file.size}</getcontentlength>
-        <getcontenttype>${mime}</getcontenttype>
-        <getetag>"${file.id}"</getetag>
-        <getlastmodified>${lastModified}</getlastmodified>
-        <creationdate>${creationDate}</creationdate>
-        <displayname>${displayName}</displayname>
-      </prop>
-      <status>HTTP/1.1 200 OK</status>
-    </propstat>
-  </response>`;
-}
-
 function filePropstatAsFile(file: DBFile, href: string): string {
   const displayName = escapeXml(file.name);
   const mime = escapeXml(file.mime || "application/octet-stream");
@@ -292,7 +252,7 @@ function filePropstatAsFile(file: DBFile, href: string): string {
 
 /** 目录自身的 propstat */
 function dirPropstat(path: string, baseUrl: string): string {
-  const href = buildHref(baseUrl, path);
+  const href = buildHref(baseUrl, path, true);
   const displayName = path === "/" ? "/" : path.split("/").filter(Boolean).pop() || "";
   return `
   <response>
@@ -318,7 +278,7 @@ function dirPropstat(path: string, baseUrl: string): string {
 /** 生成 multistatus XML 响应 */
 function multistatusXML(responses: string[]): string {
   return `<?xml version="1.0" encoding="utf-8"?>
-<D:multistatus xmlns:D="DAV:">${responses.join("")}
+<D:multistatus xmlns:D="DAV:" xmlns="DAV:">${responses.join("")}
 </D:multistatus>`;
 }
 
@@ -353,7 +313,7 @@ export async function handleWebDAV(
     return new Response("Unauthorized", {
       status: 401,
       headers: {
-        "WWW-Authenticate": `Basic realm="nano-cloud WebDAV"`,
+        "WWW-Authenticate": `Basic realm="nano-cloud WebDAV", charset="UTF-8"`,
         "Content-Type": "text/plain",
       },
     });
@@ -400,25 +360,12 @@ async function handlePropfind(
   const depth = req.headers.get("depth") || "1"; // 0 / 1 / infinity
   const baseUrl = url.origin;
 
+  if (!["0", "1", "infinity"].includes(depth)) return new Response("Invalid Depth", {status:400});
+  const file = await pathIsFile(env, internalPath);
+  if (file) return new Response(multistatusXML([filePropstatAsFile(file, buildHref(baseUrl, internalPath))]), {
+    status:207, headers:{"Content-Type":"application/xml; charset=utf-8"}
+  });
   const pathExists = await directoryExists(env, internalPath);
-  const file = pathExists && internalPath !== "/"
-    ? await env.db
-        .prepare("SELECT id, key, name, size, mime, path, uploaded_at FROM files WHERE path = ?1 AND name = ?2")
-        .bind(internalPath.slice(0, internalPath.lastIndexOf("/")) || "/",
-              internalPath.split("/").filter(Boolean).pop() || "")
-        .first<DBFile>()
-    : null;
-
-  // 检查这到底是个文件还是目录
-  if (file && file.path === internalPath) {
-    // 这是个文件
-    const href = buildHref(baseUrl, internalPath);
-    const body = multistatusXML([filePropstatAsFile(file, href)]);
-    return new Response(body, {
-      status: 207,
-      headers: { "Content-Type": "application/xml; charset=utf-8" },
-    });
-  }
 
   // 应该是目录
   if (!pathExists) {
@@ -514,36 +461,19 @@ async function handleWebDavGet(
   headers.set("Cache-Control", "no-store");
 
   if (headOnly) {
-    return new Response("", { status: 200, headers });
+    return new Response(null, { status: 200, headers });
   }
 
   // 支持 Range 请求
   const rangeHeader = req.headers.get("range");
   if (rangeHeader) {
-    const m = /^bytes=(\d*)-(\d*)$/.exec(rangeHeader.trim());
-    if (m) {
-      let offset = m[1] === "" ? null : Number(m[1]);
-      let end = m[2] === "" ? null : Number(m[2]);
-      if (offset === null && end !== null) {
-        // 后缀范围 bytes=-N
-        offset = obj.size - end;
-        end = obj.size - 1;
-      } else if (offset !== null) {
-        if (end === null) end = obj.size - 1;
-        if (end >= obj.size) end = obj.size - 1;
-        if (offset > end) {
-          return new Response("Range Not Satisfiable", { status: 416, headers: { "Content-Range": `bytes */${obj.size}` } });
-        }
-      }
-      if (offset !== null && end !== null) {
-        const len = end - offset + 1;
-        headers.set("Content-Range", `bytes ${offset}-${end}/${obj.size}`);
-        headers.set("Content-Length", String(len));
-        const ranged = await st.get(file.key, { offset, length: len });
-        if (!ranged) return new Response("Not Found", { status: 404 });
-        return new Response(ranged.body, { status: 206, headers });
-      }
-    }
+    const range = parseRange(rangeHeader, obj.size);
+    if (!range) return new Response(null, {status:416, headers:{"Content-Range":`bytes */${obj.size}`}});
+    headers.set("Content-Range", `bytes ${range.offset}-${range.offset + range.length - 1}/${obj.size}`);
+    headers.set("Content-Length", String(range.length));
+    const ranged = await st.get(file.key, range);
+    if (!ranged) return new Response("Not Found", {status:404});
+    return new Response(ranged.body, {status:206, headers});
   }
 
   const fullObj = await st.get(file.key);
@@ -591,32 +521,23 @@ async function handleWebDavPut(
     return new Response(`Storage error: ${err?.message || err}`, { status: 502 });
   }
 
-  // 检查是否已存在同名文件（覆盖）
   const existing = await findFile(env, dir, name);
-  if (existing) {
-    // 删除旧文件 + 关联的 shares
-    try {
-      await env.db.batch([
-        env.db.prepare("DELETE FROM shares WHERE file_id = ?1").bind(existing.id),
-        env.db.prepare("DELETE FROM direct_links WHERE file_id = ?1").bind(existing.id),
-        env.db.prepare("DELETE FROM download_logs WHERE file_id = ?1").bind(existing.id),
-        env.db.prepare("DELETE FROM files WHERE id = ?1").bind(existing.id),
-      ]);
-      await st.delete(existing.key).catch(() => {});
-    } catch { /* 忽略清理失败 */ }
-  }
-
-  // 插入新文件记录
   const fullPath = dir === "/" ? `/${name}` : `${dir}/${name}`;
   try {
-    await env.db.prepare(
-      "INSERT INTO files(id, key, name, size, mime, path, uploaded_at) VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7)"
-    ).bind(id, key, name, size, mime, fullPath, now).run();
-  } catch (err: any) {
-    // D1 失败 —— 清理 storage
-    await st.delete(key).catch(() => {});
-    return new Response(`DB error: ${err?.message || err}`, { status: 502 });
+    const statements: D1PreparedStatement[] = [];
+    if(existing) statements.push(
+      env.db.prepare("DELETE FROM shares WHERE file_id=?1").bind(existing.id),
+      env.db.prepare("DELETE FROM direct_links WHERE file_id=?1").bind(existing.id),
+      env.db.prepare("DELETE FROM download_logs WHERE file_id=?1").bind(existing.id),
+      env.db.prepare("DELETE FROM files WHERE id=?1").bind(existing.id));
+    statements.push(env.db.prepare("INSERT INTO files(id,key,name,size,mime,path,uploaded_at) VALUES(?1,?2,?3,?4,?5,?6,?7)")
+      .bind(id,key,name,size,mime,fullPath,now));
+    await env.db.batch(statements);
+  } catch(err) {
+    await st.delete(key).catch(()=>{});
+    return new Response("Database write failed", {status:502});
   }
+  if(existing) await st.delete(existing.key);
 
   return new Response(null, {
     status: existing ? 204 : 201,
@@ -640,13 +561,13 @@ async function handleWebDavDelete(env: Env, internalPath: string): Promise<Respo
     const file = await findFile(env, dir, name);
     if (file) {
       const st = await storage(env);
+      await st.delete(file.key);
       await env.db.batch([
         env.db.prepare("DELETE FROM shares WHERE file_id = ?1").bind(file.id),
         env.db.prepare("DELETE FROM direct_links WHERE file_id = ?1").bind(file.id),
         env.db.prepare("DELETE FROM download_logs WHERE file_id = ?1").bind(file.id),
         env.db.prepare("DELETE FROM files WHERE id = ?1").bind(file.id),
       ]);
-      await st.delete(file.key).catch(() => {});
       return new Response(null, { status: 204 });
     }
   }
@@ -657,18 +578,18 @@ async function handleWebDavDelete(env: Env, internalPath: string): Promise<Respo
     const st = await storage(env);
     const prefix = internalPath + "/";
     const { results: files } = await env.db
-      .prepare("SELECT id, key FROM files WHERE substr(path, 1, length(?1)) = ?1")
+      .prepare(`SELECT id, key FROM files WHERE substr((${FILE_PATH_SQL}), 1, length(?1)) = ?1`)
       .bind(prefix)
       .all<{ id: string; key: string }>();
 
     for (const f of files) {
+      await st.delete(f.key);
       await env.db.batch([
         env.db.prepare("DELETE FROM shares WHERE file_id = ?1").bind(f.id),
         env.db.prepare("DELETE FROM direct_links WHERE file_id = ?1").bind(f.id),
         env.db.prepare("DELETE FROM download_logs WHERE file_id = ?1").bind(f.id),
         env.db.prepare("DELETE FROM files WHERE id = ?1").bind(f.id),
       ]);
-      await st.delete(f.key).catch(() => {});
     }
 
     // 删除目录本身（directories 表）
@@ -821,29 +742,27 @@ async function handleWebDavCopy(
   }
 
   const destFile = await pathIsFile(env, destPath);
-  if (destFile && !overwrite) {
-    return new Response("Precondition Failed", { status: 412 });
-  }
-  if (destFile) {
-    const deleted = await handleWebDavDelete(env, destPath);
-    if (!deleted.ok) return deleted;
-  }
-
+  if (await directoryExists(env, destPath)) return new Response("Destination is a directory", {status:409});
+  if (destFile && !overwrite) return new Response("Precondition Failed", {status:412});
   const st = await storage(env);
   const srcObj = await st.get(srcFile.key);
-  if (!srcObj) return new Response("Source not found", { status: 404 });
-
-  const newId = randomId(14);
-  const newKey = `files/${newId}`;
+  if (!srcObj) return new Response("Source not found", {status:404});
+  const newId = randomId(14), newKey = `files/${newId}`;
   const newName = destPath.split("/").filter(Boolean).pop() || srcFile.name;
-
-  await st.put(newKey, srcObj.body, { contentType: srcFile.mime });
-
-  await env.db.prepare(
-    "INSERT INTO files(id, key, name, size, mime, path, uploaded_at) VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7)"
-  ).bind(newId, newKey, newName, srcFile.size, srcFile.mime, destPath, Date.now()).run();
-
-  return new Response("", { status: 201 });
+  await st.put(newKey, srcObj.body, {contentType:srcFile.mime});
+  try {
+    const statements: D1PreparedStatement[] = [];
+    if (destFile) statements.push(
+      env.db.prepare("DELETE FROM shares WHERE file_id = ?1").bind(destFile.id),
+      env.db.prepare("DELETE FROM direct_links WHERE file_id = ?1").bind(destFile.id),
+      env.db.prepare("DELETE FROM download_logs WHERE file_id = ?1").bind(destFile.id),
+      env.db.prepare("DELETE FROM files WHERE id = ?1").bind(destFile.id));
+    statements.push(env.db.prepare("INSERT INTO files(id,key,name,size,mime,path,uploaded_at) VALUES(?1,?2,?3,?4,?5,?6,?7)")
+      .bind(newId,newKey,newName,srcObj.size,srcFile.mime,destPath,Date.now()));
+    await env.db.batch(statements);
+  } catch(error) {await st.delete(newKey).catch(()=>{});throw error;}
+  if(destFile) await st.delete(destFile.key);
+  return new Response(null, {status:destFile ? 204 : 201});
 }
 
 /* ═══════════ 辅助：判断路径是否是文件 ═══════════ */
@@ -881,7 +800,7 @@ async function moveFile(env: Env, srcPath: string, destPath: string): Promise<vo
 async function moveDirectory(env: Env, srcDir: string, destDir: string): Promise<void> {
   const prefix = srcDir === "/" ? "/" : srcDir + "/";
   const { results: files } = await env.db
-    .prepare("SELECT id, path FROM files WHERE substr(path, 1, length(?1)) = ?1")
+    .prepare(`SELECT id, (${FILE_PATH_SQL}) AS path FROM files WHERE substr((${FILE_PATH_SQL}), 1, length(?1)) = ?1`)
     .bind(prefix)
     .all<{ id: string; path: string }>();
 

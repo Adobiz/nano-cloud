@@ -324,7 +324,9 @@ function fmtDate(ts){
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 }
 
+let loadEpoch = 0;
 async function load(){
+  const epoch = ++loadEpoch;
   grid.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
   const params = new URLSearchParams({ page: state.page, sort: state.sort, size: 12 });
   if(state.q) params.set("q", state.q);
@@ -333,11 +335,13 @@ async function load(){
     const r = await fetch(url);
     if(!r.ok) throw new Error("HTTP "+r.status);
     const d = await r.json();
+    if(epoch !== loadEpoch) return;
     if(!d.ok){ renderEmpty("😵",t('loadFailTitle'),t('loadFailDesc')); return; }
     state.total = d.total;
     totalEl.textContent = d.total;
     render(d.items || [], d.total, d.page, d.size);
   } catch(e){
+    if(epoch !== loadEpoch) return;
     console.error(e);
     renderEmpty("😵",t('networkErrTitle'),t('networkErrDesc'));
   }
