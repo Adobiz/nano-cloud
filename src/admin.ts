@@ -1694,7 +1694,7 @@ export async function handleAdminApi(
         const prov = createS3Provider(cfg);
         const testKey = `_r2pan-test-${Date.now()}`;
         // 写一个测试对象
-        await prov.put(testKey, new TextEncoder().encode("nano-cloud storage test").buffer, {
+        await prov.put(testKey, new TextEncoder().encode("nano-cloud storage test"), {
           contentType: "text/plain",
         });
         // 读回验证

@@ -161,6 +161,29 @@ async function verifyShareToken(env: Env, token: string, query: string): Promise
   return safeEqual(t.slice(i + 1), want);
 }
 
+/** Short-lived proof prevents spending a single-use Cloudflare token twice. */
+async function issueTurnstileProof(env: Env, token: string, ip: string): Promise<string> {
+  const exp = Date.now() + 5 * 60_000;
+  return `${exp}.${await hmacHex(env.admin, `turnstile:${token}:${ip}:${exp}`)}`;
+}
+async function verifyTurnstileProof(env: Env, token: string, ip: string, proof: string | null): Promise<boolean> {
+  if (!proof) return false;
+  const parts = proof.split(".");
+  if (parts.length !== 2) return false;
+  const [value, sig] = parts;
+  const exp = Number(value);
+  if (!sig || !Number.isFinite(exp) || exp <= Date.now() || exp > Date.now() + 5 * 60_000) return false;
+  return safeEqual(sig, await hmacHex(env.admin, `turnstile:${token}:${ip}:${exp}`));
+}
+async function needsTurnstile(env: Env, settings: Awaited<ReturnType<typeof getSettings>>, ip: string): Promise<boolean> {
+  if (!(await isTurnstileEnabled(env, settings))) return false;
+  if (settings.turnstileMode === "both" || settings.turnstileMode === "on_download") return true;
+  if (settings.turnstileMode !== "on_share") return false;
+  const row = await env.db.prepare("SELECT count FROM turnstile_visits WHERE ip = ?1 AND day = ?2")
+    .bind(ip, new Date().toISOString().slice(0, 10)).first<{ count: number }>();
+  return (row?.count || 0) > settings.turnstileThreshold;
+}
+
 /** GET /s/:token —— 分享页元信息（供前端渲染） */
 export async function handleShareInfo(req: Request, env: Env, token: string): Promise<Response> {
   const row = await getShare(env, token);
@@ -272,25 +295,18 @@ export async function handleVerify(req: Request, env: Env, token: string): Promi
 
   const settings = await getSettings(env);
   const ip = clientIp(req);
-  const turnstileOn = await isTurnstileEnabled(env, settings) && (settings.turnstileMode === "both");
-
-  // Turnstile 校验（both 模式下必须有有效 token）
-  if (turnstileOn) {
-    const pass = await verifyTurnstileToken(env, settings, String(body.turnstile ?? ""), ip);
-    if (!pass) {
-      return json({ error: "turnstile_failed" }, { status: 403 });
-    }
-  }
-
-  // 密码校验
-  if (!row.password_hash) {
-    // 无密码分享 → 如果 Turnstile 通过 + 没密码，直接给下载地址
-    return json({ ok: true, url: `/s/${token}/download` });
-  }
-  if (!(await verifyPassword(row.password_hash, String(body.password ?? ""))))
+  // Check the password first so a typo does not consume the challenge token.
+  if (row.password_hash && !(await verifyPassword(row.password_hash, String(body.password ?? ""))))
     return json({ error: "bad_password" }, { status: 401 });
-  const ticket = await issueToken(env, token);
-  return json({ ok: true, url: `/s/${token}/download?t=${ticket}` });
+  const params = new URLSearchParams();
+  if (await needsTurnstile(env, settings, ip)) {
+    if (!(await verifyTurnstileToken(env, settings, String(body.turnstile ?? ""), ip)))
+      return json({ error: "turnstile_failed" }, { status: 403 });
+    params.set("ts", await issueTurnstileProof(env, token, ip));
+  }
+  if (row.password_hash) params.set("t", await issueToken(env, token));
+  const query = params.toString();
+  return json({ ok: true, url: `/s/${token}/download${query ? "?" + query : ""}` });
 }
 
 /**
@@ -375,23 +391,15 @@ export async function handleDownload(
     }
   }
 
-  if (await isTurnstileEnabled(env, settings)) {
+  if (await needsTurnstile(env, settings, ip)) {
     const url = new URL(req.url);
-    const mode = settings.turnstileMode;
-    const downloadGate = mode === "on_download" || mode === "both";
-    if (downloadGate) {
-      const turnstileToken = url.searchParams.get("cf");
-      if (!turnstileToken) {
-        return errorPage(req, 403, { zh: "需要验证码", en: "Turnstile Required" },
-          { zh: "请先通过人机验证。", en: "Please complete human verification." },
-          { siteTitle: settings.siteTitle });
-      }
-      const pass = await verifyTurnstileToken(env, settings, turnstileToken, ip);
-      if (!pass) {
-        return errorPage(req, 403, { zh: "验证码校验失败", en: "Turnstile Failed" },
-          { zh: "人机验证未通过。", en: "Human verification failed." },
-          { siteTitle: settings.siteTitle });
-      }
+    // Legacy direct clients may still supply a fresh raw token.
+    const proof = await verifyTurnstileProof(env, token, ip, url.searchParams.get("ts"));
+    const rawToken = url.searchParams.get("cf");
+    if (!proof && !(rawToken && await verifyTurnstileToken(env, settings, rawToken, ip))) {
+      return errorPage(req, 403, { zh: "验证码校验失败", en: "Turnstile Failed" },
+        { zh: "请重新完成人机验证。", en: "Please complete human verification again." },
+        { siteTitle: settings.siteTitle });
     }
   }
 

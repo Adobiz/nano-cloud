@@ -72,7 +72,7 @@ export function createR2Provider(r2: R2Bucket): StorageProvider {
   return {
     kind: "r2",
     async put(key, body, opts) {
-      const r2Body = body instanceof Uint8Array ? body.buffer : body;
+      const r2Body = body instanceof Uint8Array ? new Uint8Array(body).buffer : body;
       const httpMetadata: Record<string, string> = {};
       if (opts.contentType) httpMetadata.contentType = opts.contentType;
       if (opts.contentDisposition) httpMetadata.contentDisposition = opts.contentDisposition;
@@ -148,10 +148,16 @@ export interface S3Config {
 /** URL 编码（RFC 3986），AWS S3 签名要求严格的百分号编码 */
 function encodeURIComponentStrict(s: string): string {
   return encodeURIComponent(s)
+    .replace(/!/g, "%21")
     .replace(/'/g, "%27")
     .replace(/\(/g, "%28")
     .replace(/\)/g, "%29")
     .replace(/\*/g, "%2A");
+}
+
+function compareEncoded(a: string, b: string): number {
+  const x = encodeURIComponentStrict(a), y = encodeURIComponentStrict(b);
+  return x < y ? -1 : x > y ? 1 : 0;
 }
 
 /** 生成规范化请求（Canonical Request）—— AWS Signature V4 的核心 */
@@ -162,12 +168,15 @@ function buildCanonicalRequest(
   headers: Record<string, string>,
   bodyHash: string
 ): { canonical: string; signedHeaders: string } {
-  const sortedHeaderNames = Object.keys(headers)
-    .map((k) => k.toLowerCase())
-    .sort();
+  const normalized: Record<string, string> = {};
+  for (const [name, value] of Object.entries(headers)) {
+    const key = name.toLowerCase();
+    const clean = value.trim().replace(/\s+/g, " ");
+    normalized[key] = normalized[key] ? normalized[key] + "," + clean : clean;
+  }
+  const sortedHeaderNames = Object.keys(normalized).sort();
   const signedHeaders = sortedHeaderNames.join(";");
-
-  const headerLines = sortedHeaderNames.map((name) => `${name}:${headers[name.trim()]!.trim()}\n`).join("");
+  const headerLines = sortedHeaderNames.map(name => `${name}:${normalized[name]}\n`).join("");
 
   // 规范化 query string
   let canonicalQuery = "";
@@ -175,8 +184,8 @@ function buildCanonicalRequest(
     const pairs: [string, string][] = [];
     query.forEach((v, k) => pairs.push([k, v]));
     pairs.sort((a, b) =>
-      a[0] === b[0] ? encodeURIComponentStrict(a[1]).localeCompare(encodeURIComponentStrict(b[1]))
-        : encodeURIComponentStrict(a[0]).localeCompare(encodeURIComponentStrict(b[0]))
+      a[0] === b[0] ? compareEncoded(a[1], b[1])
+        : compareEncoded(a[0], b[0])
     );
     canonicalQuery = pairs.map(([k, v]) => `${encodeURIComponentStrict(k)}=${encodeURIComponentStrict(v)}`).join("&");
   }
@@ -197,7 +206,7 @@ function buildCanonicalRequest(
 async function hmacSha256(key: ArrayBuffer | Uint8Array, data: string): Promise<ArrayBuffer> {
   const cryptoKey = await crypto.subtle.importKey(
     "raw",
-    key instanceof Uint8Array ? key.buffer : key,
+    key instanceof Uint8Array ? new Uint8Array(key).buffer : key,
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign"]
@@ -280,9 +289,8 @@ async function signS3Request(
   bodyHash: string,
   now: Date
 ): Promise<{ url: string; headers: Record<string, string> }> {
-  const host = new URL(cfg.endpoint).hostname;
-  const dateStamp = now.toISOString().slice(0, 10);
-  const amzDate = now.toISOString().replace(/[-:]/g, "").slice(0, 19) + "Z"; // 20260914T120000Z
+  const dateStamp = now.toISOString().slice(0, 10).replace(/-/g, "");
+  const amzDate = now.toISOString().replace(/[-:]|\.\d{3}/g, ""); // 20260914T120000Z
 
   // 构造 URL
   const baseUrl = cfg.endpoint.replace(/\/$/, "");
@@ -294,15 +302,23 @@ async function signS3Request(
   if (cfg.addressingStyle === "virtual") {
     // bucket 作为 hostname 前缀（https://bucket.endpoint/key）
     path = `${prefix}/${encodedKey}`;
-    url = `${baseUrl.replace(`https://`, `https://${cfg.bucket}.`)}${path}`;
+    url = `${baseUrl}${path}`;
   } else {
     // path style（默认）: https://endpoint/bucket/key
     path = `${prefix}/${cfg.bucket}/${encodedKey}`;
     url = `${baseUrl}${path}`;
   }
 
+  // Sign the actual endpoint path and host, including virtual bucket and port.
+  const target = new URL(url);
+  if (cfg.addressingStyle === "virtual") {
+    const endpoint = new URL(cfg.endpoint);
+    target.hostname = `${cfg.bucket}.${endpoint.hostname}`;
+  }
+  path = target.pathname;
+  url = target.toString();
   // 添加签名头
-  headers["Host"] = host;
+  headers["Host"] = target.host;
   headers["x-amz-date"] = amzDate;
   headers["x-amz-content-sha256"] = bodyHash;
 
@@ -354,8 +370,8 @@ export function createS3Provider(cfg: S3Config): StorageProvider {
         bodyHash = "UNSIGNED-PAYLOAD";
         fetchBody = opts.body;
       } else if (opts.body instanceof Uint8Array || opts.body instanceof ArrayBuffer) {
-        const buf = opts.body instanceof ArrayBuffer ? opts.body : opts.body.buffer;
-        bodyHash = await sha256Hex(new TextDecoder().decode(buf));
+        const buf = opts.body instanceof ArrayBuffer ? opts.body : new Uint8Array(opts.body).buffer;
+        bodyHash = bufToHex(await crypto.subtle.digest("SHA-256", buf));
         fetchBody = buf;
       }
     }

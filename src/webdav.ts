@@ -37,12 +37,16 @@ async function storage(env: Env): Promise<StorageProvider> {
 /* ═══════════ 工具函数 ═══════════ */
 
 /** 路径标准化：确保以 / 开头，不以 / 结尾（根目录除外） */
-function normPath(p: string): string {
-  p = decodeURIComponent(p);
-  p = p.replace(/\\/g, "/").replace(/\/+/g, "/");
-  if (!p.startsWith("/")) p = "/" + p;
-  if (p.length > 1 && p.endsWith("/")) p = p.slice(0, -1);
-  return p;
+function normPath(p: string, encoded = false): string {
+  p = (encoded ? decodeURIComponent(p) : p).replace(/\\/g, "/");
+  if (p.includes("\0")) throw new Error("Invalid path");
+  const parts: string[] = [];
+  for (const part of p.split("/")) {
+    if (!part || part === ".") continue;
+    if (part === "..") parts.pop();
+    else parts.push(part);
+  }
+  return "/" + parts.join("/");
 }
 
 /** 从 WebDAV URL 提取内部路径（去掉 /webdav 前缀） */
@@ -51,8 +55,9 @@ function extractInternalPath(urlPath: string): string {
   // /webdav/        → /
   // /webdav/foo.txt → /foo.txt
   // /webdav/dir/a.txt → /dir/a.txt
-  const stripped = urlPath.replace(/^\/webdav/, "");
-  return normPath(stripped || "/");
+  if (!/^\/webdav(?:\/|$)/.test(urlPath)) throw new Error("Invalid WebDAV path");
+  const stripped = urlPath.slice(7);
+  return normPath(stripped || "/", true);
 }
 
 /** 从完整 URL 构建 WebDAV href（用于 PROPFIND 响应） */
@@ -143,8 +148,8 @@ async function directoryExists(env: Env, path: string): Promise<boolean> {
   if (child) return true;
   // 有文件以这个目录开头（更深层）—— 也算存在
   const deeper: any = await env.db
-    .prepare("SELECT 1 FROM files WHERE path LIKE ?1 LIMIT 1")
-    .bind(path + "/%")
+    .prepare("SELECT 1 FROM files WHERE substr(path, 1, length(?1)) = ?1 LIMIT 1")
+    .bind(path + "/")
     .first();
   return !!deeper;
 }
@@ -156,8 +161,8 @@ async function listDirChildren(env: Env, path: string): Promise<{ files: DBFile[
 
   // 1. 直接子文件：path = 父路径 + "/" + name（精确）
   const { results: files } = await env.db
-    .prepare("SELECT id, key, name, size, mime, path, uploaded_at FROM files WHERE path LIKE ?1")
-    .bind(path === "" ? "/%" : path + "/%")
+    .prepare("SELECT id, key, name, size, mime, path, uploaded_at FROM files WHERE substr(path, 1, length(?1)) = ?1")
+    .bind(path === "" ? "/" : path + "/")
     .all<DBFile>();
 
   // 过滤出直接子文件（不是子目录里的）
@@ -177,7 +182,7 @@ async function listDirChildren(env: Env, path: string): Promise<{ files: DBFile[
       }
     } else {
       // 子目录下：path="/dir"，f.path="/dir/sub" 或 "/dir/file.txt"
-      const rest = relPath.slice(nextSlash.length - 1); // 去掉 "/dir" 前缀
+      const rest = relPath.slice(nextSlash.length); // 去掉父目录前缀及分隔符
       if (!rest) continue;
       const slashIdx = rest.indexOf("/");
       if (slashIdx < 0) {
@@ -193,8 +198,8 @@ async function listDirChildren(env: Env, path: string): Promise<{ files: DBFile[
   // 2. directories 表里显式创建的子目录
   const dirPrefix = path === "" ? "/" : nextSlash;
   const { results: explicitDirs } = await env.db
-    .prepare("SELECT path FROM directories WHERE path LIKE ?1 AND path != ?2")
-    .bind(dirPrefix + "%", path === "" ? "/" : path)
+    .prepare("SELECT path FROM directories WHERE substr(path, 1, length(?1)) = ?1 AND path != ?2")
+    .bind(dirPrefix, path === "" ? "/" : path)
     .all<{ path: string }>();
 
   for (const d of explicitDirs) {
@@ -326,7 +331,9 @@ export async function handleWebDAV(
 ): Promise<Response> {
   const url = new URL(req.url);
   const method = req.method.toUpperCase();
-  const internalPath = extractInternalPath(url.pathname);
+  let internalPath: string;
+  try { internalPath = extractInternalPath(url.pathname); }
+  catch { return new Response("Invalid path", { status: 400 }); }
 
   // 1. OPTIONS —— 不强制认证（让客户端先探测能力）
   if (method === "OPTIONS") {
@@ -354,12 +361,10 @@ export async function handleWebDAV(
 
   // 3. 检查根路径限制（settings.webdav_root_path）
   const settings = await getSettings(env);
-  if (settings.webdavRootPath && settings.webdavRootPath !== "/") {
-    const root = settings.webdavRootPath.replace(/\/+$/, "") || "/";
-    if (!internalPath.startsWith(root)) {
-      return new Response("Forbidden", { status: 403 });
-    }
-  }
+  const root = normPath(settings.webdavRootPath || "/");
+  if (!withinRoot(internalPath, root)) return new Response("Forbidden", { status: 403 });
+  if (internalPath === root && ["DELETE", "MOVE", "COPY"].includes(method))
+    return new Response("Cannot alter WebDAV root", { status: 403 });
 
   // 4. 分发到各方法处理
   switch (method) {
@@ -593,6 +598,7 @@ async function handleWebDavPut(
     try {
       await env.db.batch([
         env.db.prepare("DELETE FROM shares WHERE file_id = ?1").bind(existing.id),
+        env.db.prepare("DELETE FROM direct_links WHERE file_id = ?1").bind(existing.id),
         env.db.prepare("DELETE FROM download_logs WHERE file_id = ?1").bind(existing.id),
         env.db.prepare("DELETE FROM files WHERE id = ?1").bind(existing.id),
       ]);
@@ -612,7 +618,7 @@ async function handleWebDavPut(
     return new Response(`DB error: ${err?.message || err}`, { status: 502 });
   }
 
-  return new Response("", {
+  return new Response(null, {
     status: existing ? 204 : 201,
     headers: { "ETag": `"${id}"` },
   });
@@ -636,11 +642,12 @@ async function handleWebDavDelete(env: Env, internalPath: string): Promise<Respo
       const st = await storage(env);
       await env.db.batch([
         env.db.prepare("DELETE FROM shares WHERE file_id = ?1").bind(file.id),
+        env.db.prepare("DELETE FROM direct_links WHERE file_id = ?1").bind(file.id),
         env.db.prepare("DELETE FROM download_logs WHERE file_id = ?1").bind(file.id),
         env.db.prepare("DELETE FROM files WHERE id = ?1").bind(file.id),
       ]);
       await st.delete(file.key).catch(() => {});
-      return new Response("", { status: 204 });
+      return new Response(null, { status: 204 });
     }
   }
 
@@ -648,15 +655,16 @@ async function handleWebDavDelete(env: Env, internalPath: string): Promise<Respo
   if (await directoryExists(env, internalPath)) {
     // 递归删除目录下所有文件
     const st = await storage(env);
-    const likePattern = internalPath + "/%";
+    const prefix = internalPath + "/";
     const { results: files } = await env.db
-      .prepare("SELECT id, key FROM files WHERE path LIKE ?1")
-      .bind(likePattern)
+      .prepare("SELECT id, key FROM files WHERE substr(path, 1, length(?1)) = ?1")
+      .bind(prefix)
       .all<{ id: string; key: string }>();
 
     for (const f of files) {
       await env.db.batch([
         env.db.prepare("DELETE FROM shares WHERE file_id = ?1").bind(f.id),
+        env.db.prepare("DELETE FROM direct_links WHERE file_id = ?1").bind(f.id),
         env.db.prepare("DELETE FROM download_logs WHERE file_id = ?1").bind(f.id),
         env.db.prepare("DELETE FROM files WHERE id = ?1").bind(f.id),
       ]);
@@ -664,9 +672,9 @@ async function handleWebDavDelete(env: Env, internalPath: string): Promise<Respo
     }
 
     // 删除目录本身（directories 表）
-    await env.db.prepare("DELETE FROM directories WHERE path = ?1").bind(internalPath).run();
+    await env.db.prepare("DELETE FROM directories WHERE path = ?1 OR substr(path, 1, length(?2)) = ?2").bind(internalPath, internalPath + "/").run();
 
-    return new Response("", { status: 204 });
+    return new Response(null, { status: 204 });
   }
 
   return new Response("Not Found", { status: 404 });
@@ -708,6 +716,25 @@ async function handleWebDavMkcol(env: Env, internalPath: string): Promise<Respon
   return new Response("", { status: 201 });
 }
 
+function withinRoot(path: string, root: string): boolean {
+  return root === "/" || path === root || path.startsWith(root + "/");
+}
+
+async function destinationPath(req: Request, env: Env, url: URL, source: string): Promise<string | Response> {
+  let target: URL, path: string;
+  try {
+    target = new URL(req.headers.get("destination") || "");
+    path = extractInternalPath(target.pathname);
+  } catch { return new Response("Invalid Destination", { status: 400 }); }
+  const root = normPath((await getSettings(env)).webdavRootPath || "/");
+  if (target.origin !== url.origin || target.username || target.password || target.search || target.hash ||
+      !withinRoot(path, root) || path === root)
+    return new Response("Forbidden Destination", { status: 403 });
+  if (path === source || path.startsWith(source + "/") || source.startsWith(path + "/"))
+    return new Response("Source and destination overlap", { status: 403 });
+  return path;
+}
+
 /* ═══════════ MOVE ═══════════ */
 
 async function handleWebDavMove(
@@ -721,14 +748,9 @@ async function handleWebDavMove(
     return new Response("Missing Destination header", { status: 400 });
   }
 
-  // 从 Destination URL 提取目标路径
-  let destPath: string;
-  try {
-    const destUrl = new URL(destHeader);
-    destPath = extractInternalPath(destUrl.pathname);
-  } catch {
-    return new Response("Invalid Destination", { status: 400 });
-  }
+  const destination = await destinationPath(req, env, url, internalPath);
+  if (destination instanceof Response) return destination;
+  const destPath = destination;
 
   const overwrite = (req.headers.get("overwrite") || "T").toUpperCase() === "T";
 
@@ -754,7 +776,8 @@ async function handleWebDavMove(
 
   // 如果目标已存在，先删除
   if (destExists || destFile) {
-    await handleWebDavDelete(env, destPath);
+    const deleted = await handleWebDavDelete(env, destPath);
+    if (!deleted.ok) return deleted;
   }
 
   if (srcFile) {
@@ -765,7 +788,7 @@ async function handleWebDavMove(
     await moveDirectory(env, internalPath, destPath);
   }
 
-  return new Response("", { status: destExists || destFile ? 204 : 201 });
+  return new Response(null, { status: destExists || destFile ? 204 : 201 });
 }
 
 /* ═══════════ COPY ═══════════ */
@@ -781,13 +804,9 @@ async function handleWebDavCopy(
     return new Response("Missing Destination header", { status: 400 });
   }
 
-  let destPath: string;
-  try {
-    const destUrl = new URL(destHeader);
-    destPath = extractInternalPath(destUrl.pathname);
-  } catch {
-    return new Response("Invalid Destination", { status: 400 });
-  }
+  const destination = await destinationPath(req, env, url, internalPath);
+  if (destination instanceof Response) return destination;
+  const destPath = destination;
 
   const overwrite = (req.headers.get("overwrite") || "T").toUpperCase() === "T";
 
@@ -806,7 +825,8 @@ async function handleWebDavCopy(
     return new Response("Precondition Failed", { status: 412 });
   }
   if (destFile) {
-    await handleWebDavDelete(env, destPath);
+    const deleted = await handleWebDavDelete(env, destPath);
+    if (!deleted.ok) return deleted;
   }
 
   const st = await storage(env);
@@ -859,10 +879,10 @@ async function moveFile(env: Env, srcPath: string, destPath: string): Promise<vo
 /* ═══════════ 辅助：移动目录（递归更新 path 前缀） ═══════════ */
 
 async function moveDirectory(env: Env, srcDir: string, destDir: string): Promise<void> {
-  const likePattern = srcDir === "/" ? "/%" : srcDir + "/%";
+  const prefix = srcDir === "/" ? "/" : srcDir + "/";
   const { results: files } = await env.db
-    .prepare("SELECT id, path FROM files WHERE path LIKE ?1")
-    .bind(likePattern)
+    .prepare("SELECT id, path FROM files WHERE substr(path, 1, length(?1)) = ?1")
+    .bind(prefix)
     .all<{ id: string; path: string }>();
 
   for (const f of files) {
@@ -878,8 +898,8 @@ async function moveDirectory(env: Env, srcDir: string, destDir: string): Promise
 
   // 也更新 directories 表中的子目录记录
   const { results: dirs } = await env.db
-    .prepare("SELECT path FROM directories WHERE path LIKE ?1")
-    .bind(likePattern)
+    .prepare("SELECT path FROM directories WHERE substr(path, 1, length(?1)) = ?1")
+    .bind(prefix)
     .all<{ path: string }>();
 
   for (const d of dirs) {
