@@ -105,6 +105,28 @@ h1 { font-size:30px; line-height:1.5; overflow-wrap:anywhere; }
 .page-brand { position:absolute; top:max(20px,env(safe-area-inset-top)); left:max(20px,env(safe-area-inset-left)); display:flex; align-items:center; gap:10px; color:var(--text); font-weight:500; }
 .page-brand img { display:block; border-radius:10px; flex:none; }
 body { padding-top:100px; }
+
+@media(max-width:600px) {
+ body { justify-content:flex-start; min-height:100dvh; padding:96px 12px max(82px,env(safe-area-inset-bottom)); }
+ .page-brand { top:max(16px,env(safe-area-inset-top)); left:max(16px,env(safe-area-inset-left)); }
+ .card { padding:26px 18px; }
+ .file-icon { width:54px; height:64px; margin-bottom:18px; }
+ h1 { font-size:24px; line-height:1.4; }
+ .meta { font-size:13px; gap:8px; }
+ .stats { margin-top:20px; padding:16px 0; }
+ .stat .v { font-size:21px; }
+ .card .btn { min-height:50px; margin-top:18px; }
+ .lang-btn,#oauth-logout,.unbind-btn { min-height:44px; }
+ .code-modal-mask { align-items:flex-end; padding:0; }
+ .code-modal { max-width:100%; max-height:calc(100dvh - 20px); padding:24px 20px max(24px,env(safe-area-inset-bottom)); border-radius:18px 18px 0 0; overscroll-behavior:contain; }
+ .code-modal .close { width:44px; height:44px; }
+ .code-modal h3 { padding-right:40px; }
+ .code-btn-row button { min-height:48px; }
+ .code-bound-row .detail { flex-wrap:wrap; }
+ .ts-wrap { margin-left:-14px; margin-right:-14px; }
+ .code-float:not(.position-right) { top:auto; bottom:max(18px,env(safe-area-inset-bottom)); }
+ .code-float.position-right { top:max(16px,env(safe-area-inset-top)); }
+}
 </style>
 </head>
 <body>

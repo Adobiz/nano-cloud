@@ -111,6 +111,21 @@ footer { text-align:center; margin-top:48px; padding-top:24px; border-top:1px so
 .brand-icon img { display:block; width:44px; height:44px; }
 .brand > div:nth-child(2) { min-width:0; }
 @media(max-width:600px) { .brand-icon { display:flex; width:36px; height:36px; }.brand-icon img { width:36px; height:36px; } }
+
+@media(max-width:600px) {
+ body { padding:20px max(14px,env(safe-area-inset-left)) max(32px,env(safe-area-inset-bottom)); }
+ .brand { align-items:flex-start; padding-bottom:20px; margin-bottom:20px; }
+ h1 { font-size:26px; }
+ .lang-btn,.pagination button { min-height:44px; min-width:44px; }
+ .toolbar { gap:10px; }
+ .search { min-width:0; flex-basis:100%; }
+ .search input,.sort select { font-size:16px; min-height:48px; }
+ .grid { gap:12px; }
+ a.card { padding:18px; }
+ .card-head > div { min-width:0; }
+ .meta-left { flex-wrap:wrap; }
+ .pagination { gap:8px; }
+}
 </style>
 </head>
 <body>

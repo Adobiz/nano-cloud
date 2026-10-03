@@ -210,6 +210,74 @@ button:active,.btn:active { transform:translateY(1px); }
  .settings-actions { width:100%; margin-left:0; justify-content:flex-start; }
  .settings-page #oauth-providers-grid { padding:0 18px; }
 }
+
+/* Phone layouts keep every field and action available without wide tables. */
+.mobile-nav { display:none; }
+@media(max-width:760px) {
+ .wrap { padding:0 max(12px,env(safe-area-inset-left)) max(28px,env(safe-area-inset-bottom)); }
+ .topbar { gap:8px; margin-bottom:14px; padding:16px 0; }
+ .topbar > div:nth-child(2) { flex:1 0 calc(100% - 52px); min-width:0; overflow-wrap:anywhere; }
+ .topbar .spacer { display:none; }
+ .topbar .logo { width:36px; height:36px; }
+ .topbar h1 { font-size:20px; }
+ .topbar .traffic-pill { justify-content:center; min-height:44px; }
+ .topbar .btn { flex:1; padding:8px 10px; }
+ .layout { gap:16px; }
+ .sidebar { display:none; }
+ .mobile-nav { display:flex; align-items:center; gap:12px; width:100%; padding:12px 14px; border:1px solid var(--stroke); border-radius:10px; background:var(--glass); }
+ .mobile-nav label { flex:none; color:var(--text-2); }
+ .mobile-nav select { flex:1; min-width:0; min-height:44px; border:1px solid var(--stroke-strong); border-radius:7px; background:var(--sf-input); color:var(--text); padding:8px 12px; font-size:16px; }
+ .btn,.btn.sm,.lang-btn { min-height:44px; }
+ input:not([type=checkbox]):not([type=radio]),select,textarea { font-size:16px!important; }
+ input[type=checkbox] { width:22px; height:22px; accent-color:var(--accent); }
+ .switch { height:44px; }
+ .switch .track { top:9px; bottom:9px; }
+ .section { padding:16px; overflow-x:visible; }
+ .section-title { align-items:flex-start; gap:12px; }
+ .section-title > div { flex-wrap:wrap; max-width:100%; gap:8px; }
+ .section-title input { width:100%!important; min-width:0; }
+ .section form { flex-wrap:wrap; }
+ .section form input { min-width:0!important; max-width:100%; }
+ .group .row { padding:16px; gap:12px; }
+ .group .row > div { min-width:0!important; max-width:100%; overflow-wrap:anywhere; }
+ .group .row > div:has(> .btn) { flex-wrap:wrap; }
+ .settings-actions .btn { flex:1 1 140px; }
+ .settings-page .row > textarea { width:100%!important; }
+ .dropzone { padding:24px 16px; }
+ .dropzone .t { font-size:21px; }
+ .upload-item { flex-wrap:wrap; gap:8px; }
+ .upload-item > span:nth-child(2) { flex:1; }
+ .upload-item .prog { flex-basis:70%; }
+ .stat-card { padding:14px; min-width:0; overflow-wrap:anywhere; }
+ .stat-card .value { font-size:24px; }
+ .chart { gap:4px; }
+ .chart .col:nth-child(even) .day { visibility:hidden; }
+ .pager { flex-wrap:wrap; }
+ .tbl[data-mobile-cards] { display:block; min-width:0; width:100%; }
+ .tbl[data-mobile-cards] thead { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
+ .tbl[data-mobile-cards][data-selectable] thead { position:static; width:auto; height:auto; clip-path:none; }
+ .tbl[data-mobile-cards][data-selectable] thead tr { display:block; padding:8px 0; }
+ .tbl[data-mobile-cards][data-selectable] th { display:none; }
+ .tbl[data-mobile-cards][data-selectable] th:has(input) { display:flex; align-items:center; gap:12px; width:auto!important; }
+ .tbl[data-mobile-cards][data-selectable] th:has(input)::after { content:attr(data-label); }
+ .tbl[data-mobile-cards] tbody { display:grid; gap:12px; padding:4px; }
+ .tbl[data-mobile-cards] tbody tr { display:block; min-width:0; padding:14px; background:var(--glass); border:1px solid var(--stroke); border-radius:10px; }
+ .tbl[data-mobile-cards] td { display:grid; grid-template-columns:82px minmax(0,1fr); gap:10px; align-items:start; width:auto!important; max-width:none; padding:7px 0; border:0; white-space:normal; overflow-wrap:anywhere; text-overflow:clip; }
+ .tbl[data-mobile-cards] td::before { content:attr(data-label); font-family:var(--body); font-size:13px; font-weight:400; color:var(--text-3); }
+ .tbl[data-mobile-cards] td[data-kind=title] { display:block; font-size:16px; font-weight:500; padding-bottom:12px; }
+ .tbl[data-mobile-cards] td[data-kind=title]::before,.tbl[data-mobile-cards] td[data-kind=wide]::before,.tbl[data-mobile-cards] td[data-kind=actions]::before { display:none; }
+ .tbl[data-mobile-cards] td[data-kind=icon] { display:none; }
+ .tbl[data-mobile-cards] td[data-kind=wide] { display:block; }
+ .tbl[data-mobile-cards] td[data-kind=actions] { display:block; margin-top:10px; padding-top:14px; border-top:1px solid var(--stroke); }
+ .tbl[data-mobile-cards] .actions-cell { flex-wrap:wrap; gap:8px; }
+ .tbl[data-mobile-cards] td[data-kind=actions] .btn { flex:1 1 auto; }
+ .tbl[data-mobile-cards] td > div { min-width:0; max-width:100%; }
+ .modal-mask { align-items:flex-end; padding:0; }
+ .modal { max-width:100%; max-height:calc(100dvh - 20px); padding:24px 20px max(24px,env(safe-area-inset-bottom)); border-radius:18px 18px 0 0; overscroll-behavior:contain; }
+ .modal .actions { position:sticky; bottom:0; background:var(--glass-strong); padding:12px 0 0; }
+ .modal .field > div { flex-wrap:wrap; }
+ .login-card { padding:30px 22px; }
+}
 </style>
 </head>
 <body>
@@ -1271,10 +1339,19 @@ async function showApp(){
       <button class="btn sm" id="logout-btn">${esc(t('logout'))}</button>
     </div>
     <div class="layout">
+      <div class="mobile-nav">
+        <label for="mobile-page">${LANG === 'zh' ? '页面' : 'Page'}</label>
+        <select id="mobile-page">${NAV_GROUPS.map(g => g.subs
+          ? `<optgroup label="${esc(g.label())}">${g.subs.map(sub => `<option value="${sub.tab}">${esc(sub.label())}</option>`).join('')}</optgroup>`
+          : `<option value="${g.tab}">${esc(g.label())}</option>`).join('')}</select>
+      </div>
       <nav class="sidebar" id="sidebar">${sidebarHtml}</nav>
       <div id="view"></div>
     </div>
   </div>`;
+
+  $('#mobile-page').onchange = e => switchTab(e.target.value);
+  watchMobileTables($('#view'));
 
   // 绑定侧边栏事件
   $('#sidebar').addEventListener('click', e => {
@@ -1313,6 +1390,52 @@ async function showApp(){
   switchTab('overview');
 }
 
+/* Derive mobile field labels from existing translated table headers. */
+let mobileTablesObserver;
+function prepareMobileTables(root) {
+  root.querySelectorAll('table.tbl').forEach(table => {
+    const headers = [...table.querySelectorAll('thead th')];
+    if (!headers.length) return;
+    table.setAttribute('data-mobile-cards', '');
+    if (headers.some(header => header.querySelector('input[type=checkbox]'))) {
+      table.setAttribute('data-selectable', '');
+      headers.forEach(header => {
+        const checkbox = header.querySelector('input[type=checkbox]');
+        if (checkbox) {
+          const label = LANG === 'zh' ? '全选' : 'Select all';
+          header.setAttribute('data-label', label);
+          checkbox.setAttribute('aria-label', label);
+        }
+      });
+    }
+    table.querySelectorAll('tbody tr').forEach(row => {
+      [...row.children].forEach((cell, index) => {
+        const label = (headers[index]?.textContent || '').trim();
+        cell.setAttribute('data-label', label);
+        let kind = '';
+        if (cell.colSpan > 1) kind = 'wide';
+        else if (cell.querySelector('.btn, .actions-cell')) kind = 'actions';
+        else if (cell.classList.contains('name-cell') || cell.querySelector('.stg-dir')) kind = 'title';
+        else if (!label && !cell.querySelector('input')) kind = 'icon';
+        cell.setAttribute('data-kind', kind);
+        const checkbox = cell.querySelector('input[type=checkbox]');
+        if (checkbox) {
+          const selectLabel = LANG === 'zh' ? '选择' : 'Select';
+          cell.setAttribute('data-label', selectLabel);
+          checkbox.setAttribute('aria-label', selectLabel + ' ' + row.textContent.trim());
+        }
+      });
+    });
+  });
+}
+function watchMobileTables(root) {
+  mobileTablesObserver?.disconnect();
+  if (typeof MutationObserver === 'undefined') return;
+  mobileTablesObserver = new MutationObserver(() => prepareMobileTables(root));
+  mobileTablesObserver.observe(root, {childList:true, subtree:true});
+  prepareMobileTables(root);
+}
+
 /* Tab → loadXxx 函数映射 */
 const TAB_LOADERS = {
   overview: loadOverview, files: loadFiles, storage: loadStorage, shares: loadShares,
@@ -1323,6 +1446,8 @@ const TAB_LOADERS = {
 function switchTab(tab){
   const epoch = ++navigationEpoch;
   currentTab = tab;
+  const mobilePage = $('#mobile-page');
+  if (mobilePage) mobilePage.value = tab;
   openGroup = TAB_TO_GROUP[tab] || tab;
   // 更新侧边栏高亮 & 展开
   const sidebar = $('#sidebar');
