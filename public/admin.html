@@ -187,6 +187,29 @@ button:active,.btn:active { transform:translateY(1px); }
 .modal [style*="background:rgba(0,0,0"], .section [style*="background:rgba(0,0,0"] { background:var(--sf)!important; }
 .logo svg { width:24px; height:24px; color:var(--accent); }
 .login-card .logo svg { width:32px; height:32px; }
+
+/* Brand asset and settings controls share the existing warm paper system. */
+.page-brand { position:absolute; top:max(20px,env(safe-area-inset-top)); left:max(20px,env(safe-area-inset-left)); display:inline-flex; align-items:center; gap:10px; color:var(--text); font-weight:500; text-decoration:none; }
+.page-brand img { display:block; flex:none; border-radius:10px; }
+#login-view { padding-top:96px; }
+.topbar .logo { width:44px; height:44px; }
+.settings-page .row { flex-wrap:wrap; gap:12px 18px; }
+.settings-page .row > .info { flex:1 1 240px; min-width:0; overflow-wrap:anywhere; }
+.settings-page .row > .btn,.settings-page .row > .switch,.settings-page .row > .tag { flex-shrink:0; }
+.settings-page .row > input,.settings-page .row > select { flex:0 1 180px; min-width:0; max-width:100%; margin-left:auto; }
+.settings-page .btn { white-space:normal; text-align:center; overflow-wrap:anywhere; }
+.settings-actions { display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:8px; max-width:100%; margin-left:auto; }
+.settings-actions .btn { flex:0 1 auto; }
+.settings-page .oauth-provider-card { min-width:0; overflow-wrap:anywhere; }
+.settings-page #oauth-providers-grid { grid-template-columns:repeat(auto-fit,minmax(min(260px,100%),1fr))!important; padding:0 24px; }
+.settings-page .group > .tip { padding:0 24px 16px; }
+@media(max-width:600px) {
+ .settings-page .row > .info { flex-basis:100%; }
+ .settings-page .row:has(> .switch) > .info { flex:1 1 calc(100% - 64px); }
+ .settings-page .row > input,.settings-page .row > select { flex-basis:100%; width:100%; margin-left:0; }
+ .settings-actions { width:100%; margin-left:0; justify-content:flex-start; }
+ .settings-page #oauth-providers-grid { padding:0 18px; }
+}
 </style>
 </head>
 <body>
@@ -1147,8 +1170,9 @@ function shake(){
 function renderLoginCard(bodyHtml){
   $('#app').innerHTML = `
   <div id="login-view">
+    <a class="page-brand" href="/" aria-label="nano-cloud"><img src="/logo.svg" alt="" width="40" height="40"><span>nano-cloud</span></a>
     <div class="login-card glass">
-      <div class="logo"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2L21 8.5V15.5L12 22L3 15.5V8.5L12 2Z" stroke="#fff" stroke-width="1.8" stroke-linejoin="round" fill="rgba(255,255,255,.14)"/><path d="M12 2V22M3 8.5L12 15L21 8.5M3 15.5L12 9L21 15.5" stroke="#fff" stroke-width="1.2" opacity=".65"/></svg></div>
+      <div class="logo"><img src="/logo.svg" alt="nano-cloud" width="44" height="44"></div>
       ${bodyHtml}
     </div>
   </div>`;
@@ -1229,7 +1253,7 @@ async function showApp(){
   $('#app').innerHTML = `
   <div class="wrap">
     <div class="topbar">
-      <div class="logo"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2L21 8.5V15.5L12 22L3 15.5V8.5L12 2Z" stroke="#fff" stroke-width="1.8" stroke-linejoin="round" fill="rgba(255,255,255,.14)"/><path d="M12 2V22M3 8.5L12 15L21 8.5M3 15.5L12 9L21 15.5" stroke="#fff" stroke-width="1.2" opacity=".65"/></svg></div>
+      <div class="logo"><img src="/logo.svg" alt="nano-cloud" width="44" height="44"></div>
       <div><h1>${esc(siteTitle)}</h1><div class="sub">${esc(t('topbarSub'))}</div></div>
       <div class="spacer"></div>
       <div class="traffic-pill" id="traffic-pill" title="${esc(t('statTraffic'))}">
@@ -2677,6 +2701,7 @@ async function loadSettings(){
     api('/api/admin/db/status').catch(() => null),
   ]);
   $('#view').innerHTML = `
+    <div class="settings-page">
     <div class="glass group">
       <div class="row">
         <div class="info"><div class="t">${esc(t('siteName'))}</div><div class="d">${esc(t('siteNameD'))}</div></div>
@@ -2716,7 +2741,7 @@ async function loadSettings(){
     <div class="glass group">
       <div class="row">
         <div class="info"><div class="t">🧹 ${esc(t('clearLogs'))}</div><div class="d">${esc(t('clearLogsD'))}</div></div>
-        <div style="display:flex;gap:8px">
+        <div class="settings-actions">
           <button class="btn sm" id="st-clear-30">${esc(t('clear30'))}</button>
           <button class="btn sm danger" id="st-clear-all">${esc(t('clearAll'))}</button>
         </div>
@@ -2739,7 +2764,7 @@ async function loadSettings(){
         <div class="info"><div class="t">🏪 ${esc(t('homeRedirectMarket'))}</div><div class="d">${esc(t('homeRedirectMarketD'))}</div></div>
         <label class="switch">
           <input type="checkbox" id="st-home-market" ${s.home_redirect_market ? 'checked' : ''}>
-          <span class="slider"></span>
+          <span class="track"><span class="thumb"></span></span>
         </label>
       </div>
       <div class="tip" style="margin-top:8px">${esc(t('homeRedirectMarketHint'))}</div>
@@ -2750,7 +2775,7 @@ async function loadSettings(){
         <div class="info"><div class="t">🎟️ ${esc(t('codesFloatingBtn'))}</div><div class="d">${esc(t('codesFloatingBtnD'))}</div></div>
         <label class="switch">
           <input type="checkbox" id="st-codes-float" ${s.codes_floating_button_enabled !== false ? 'checked' : ''}>
-          <span class="slider"></span>
+          <span class="track"><span class="thumb"></span></span>
         </label>
       </div>
       <div class="row">
@@ -2836,7 +2861,7 @@ async function loadSettings(){
               <div><b>Secret:</b> <span style="${p.secret_configured?'color:#6ee7b7':'color:#fda293'}">${p.secret_configured ? esc(t('oauthSecretConfigured')) : esc(t('oauthSecretNotConfigured'))}</span></div>
               <div><b>Scope:</b> ${esc(p.scope || '—')}</div>
             </div>
-            <div style="display:flex;gap:6px;margin-top:10px">
+            <div class="settings-actions" style="margin-top:10px">
               <button class="btn sm" data-oauth-config="${esc(p.id)}" style="flex:1;padding:6px 10px;font-size:12px;border-radius:10px">${esc(t('oauthConfigure'))}</button>
               <button class="btn sm" data-oauth-toggle="${esc(p.id)}" style="padding:6px 10px;font-size:12px;border-radius:10px">${p.enabled ? esc(t('oauthDisable')) : esc(t('oauthEnable'))}</button>
               <button class="btn sm danger" data-oauth-delete="${esc(p.id)}" style="padding:6px 10px;font-size:12px;border-radius:10px">🗑️</button>
@@ -2922,7 +2947,8 @@ async function loadSettings(){
         <button class="btn sm ${dbStatus && dbStatus.healthy ? '' : 'primary'}" id="db-repair">${esc(t('dbRepairBtn'))}</button>
       </div>
     </div>
-    <button class="btn primary" id="st-save" style="padding:14px 28px;font-size:15px;border-radius:18px">${esc(t('save'))}</button>`;
+    <button class="btn primary" id="st-save" style="padding:14px 28px;font-size:15px;border-radius:18px">${esc(t('save'))}</button>
+    </div>`;
 
   // ── 数据库工具按钮 ──
   $('#db-refresh')?.addEventListener('click', () => loadSettings());

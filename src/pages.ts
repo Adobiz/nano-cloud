@@ -1,3 +1,4 @@
+import logoSVG from "../assets/logo.svg";
 import adminHTML from "../public/admin.html";
 import shareHTML from "../public/share.html";
 import marketHTML from "../public/market.html";
@@ -45,6 +46,20 @@ export function json(body: unknown, init?: ResponseInit): Response {
   if (!headers.has("content-type")) headers.set("content-type", "application/json;charset=utf-8");
   addSecurityHeaders(headers);
   return new Response(JSON.stringify(body), { ...init, headers });
+}
+
+export function serveLogo(req: Request): Response {
+  if (req.method !== "GET" && req.method !== "HEAD") {
+    return new Response(null, { status: 405, headers: { Allow: "GET, HEAD" } });
+  }
+  return new Response(req.method === "HEAD" ? null : logoSVG, {
+    headers: {
+      "content-type": "image/svg+xml;charset=utf-8",
+      "cache-control": "public, max-age=3600",
+      "x-content-type-options": "nosniff",
+      "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+    },
+  });
 }
 
 export function serveAdminPage(): Response {

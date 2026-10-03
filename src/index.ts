@@ -2,7 +2,7 @@ import type { Env } from "./types";
 import { ensureSchema } from "./db";
 import { handleAdminApi } from "./admin";
 import { handleDownload, handleDirectDownload, handleShareInfo, handleVerify } from "./public";
-import { serveAdminPage, serveSharePage, serveMarketPage, errorPage } from "./pages";
+import { serveAdminPage, serveSharePage, serveMarketPage, serveLogo, errorPage } from "./pages";
 import {
   handleOAuthStart,
   handleOAuthCallback,
@@ -82,6 +82,8 @@ export default {
 async function route(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   const url = new URL(req.url);
   const path = url.pathname;
+
+  if (path === "/logo.svg") return serveLogo(req);
 
   // 首页：根据管理员设置决定去向（默认 → /admin；开启后 → /market）
   if (path === "/") {

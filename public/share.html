@@ -101,10 +101,16 @@ h1 { font-size:30px; line-height:1.5; overflow-wrap:anywhere; }
 .oauth-block a.btn { background:var(--accent)!important; color:#fffdf8!important; border-radius:8px!important; box-shadow:none!important; }
 .oauth-block #oauth-logout { color:var(--text-2)!important; }
 #copy-direct { background:var(--sf)!important; color:var(--text)!important; }
+
+.page-brand { position:absolute; top:max(20px,env(safe-area-inset-top)); left:max(20px,env(safe-area-inset-left)); display:flex; align-items:center; gap:10px; color:var(--text); font-weight:500; }
+.page-brand img { display:block; border-radius:10px; flex:none; }
+body { padding-top:100px; }
 </style>
 </head>
 <body>
 <div class="orb o1"></div><div class="orb o2"></div><div class="orb o3"></div>
+
+<div class="page-brand" aria-label="nano-cloud"><img src="/logo.svg" alt="" width="40" height="40"><span>nano-cloud</span></div>
 
 <div class="card" id="app">
   <div class="loading">
