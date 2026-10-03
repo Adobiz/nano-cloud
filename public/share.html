@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>nano-cloud</title>
+<style>
+
+/* Warm editorial design tokens, shared by the three HTML entry points. */
+:root {
+  color-scheme:light;
+  --bg-page:#f6f4ee; --glass:#fffdf8; --glass-strong:#fffdf8;
+  --text:#302e29; --text-2:#655f56; --text-3:#787066;
+  --stroke:#e4dfd5; --stroke-strong:#cec7ba; --blue:#a64f36;
+  --accent:#a64f36; --accent-soft:#f0e1d7; --success:#35664c;
+  --warning:#8a5b18; --danger:#a13c32;
+  --sf-soft:#f8f6f0; --sf:#efece4; --sf-strong:#e9e4d9;
+  --sf-input:#fffdf8; --sf-input-focus:#fffdf8;
+  --track-bg:#ded8cc; --bar-bg:#eae4d9;
+  --tbl-divider:#ece7dd; --tbl-hover:#f6f2e9; --tbl-row-border:#ece7dd;
+  --scrollbar-thumb:#c8c0b3; --radius:12px;
+  --display:"Songti SC","STSong",Georgia,"Times New Roman",serif;
+  --body:"PingFang SC","Microsoft YaHei",-apple-system,BlinkMacSystemFont,sans-serif;
+}
+* { box-sizing:border-box; margin:0; padding:0; }
+html { -webkit-text-size-adjust:100%; }
+body { font-family:var(--body); color:var(--text); background:var(--bg-page); font-size:15px; line-height:1.65; min-height:100vh; overflow-x:hidden; }
+::selection { background:var(--accent-soft); }
+button,input,select,textarea { font:inherit; }
+button,a,input,select,textarea { -webkit-tap-highlight-color:transparent; }
+button,a { touch-action:manipulation; }
+a { color:var(--accent); text-underline-offset:4px; }
+a:hover { text-decoration:underline; }
+h1,h2,h3,p { text-wrap:pretty; }
+:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+input:focus,textarea:focus,select:focus { border-color:var(--accent)!important; }
+input::placeholder,textarea::placeholder { color:var(--text-3); }
+button { cursor:pointer; }
+button:disabled,.btn[disabled] { opacity:.45; cursor:not-allowed; pointer-events:none; }
+button:active,.btn:active { transform:translateY(1px); }
+.orb { display:none; }
+::-webkit-scrollbar { width:8px; height:8px; }
+::-webkit-scrollbar-thumb { background:var(--scrollbar-thumb); border:2px solid var(--bg-page); border-radius:8px; }
+.mono { font-family:ui-monospace,"SF Mono",monospace; font-size:13px; }
+.btn,.lang-btn { display:inline-flex; align-items:center; justify-content:center; gap:8px; min-height:40px; padding:9px 16px; border:1px solid var(--stroke-strong); border-radius:8px; background:var(--glass); color:var(--text); font-size:14px; font-weight:500; text-decoration:none; transition:background .15s,border-color .15s; }
+.btn:hover,.lang-btn:hover { background:var(--sf); border-color:var(--text-3); text-decoration:none; }
+.btn.primary { background:var(--accent); color:#fffdf8; border-color:var(--accent); }
+.btn.primary:hover { filter:brightness(.94); }
+.btn.danger { color:var(--danger); background:transparent; border-color:var(--stroke-strong); }
+.btn.danger:hover { background:var(--accent-soft); }
+.btn.sm { min-height:34px; padding:6px 11px; font-size:13px; }
+.empty { text-align:center; padding:48px 20px; color:var(--text-3); }
+.empty .icon,.empty .emoji { font-size:32px; margin-bottom:12px; }
+.spin,.spinner { width:28px; height:28px; margin:28px auto; border:2px solid var(--stroke); border-top-color:var(--accent); border-radius:50%; animation:spin .8s linear infinite; }
+@keyframes spin { to { transform:rotate(360deg); } }
+@keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
+@keyframes shake { 0%,100% { transform:translateX(0); } 25%,75% { transform:translateX(-4px); } 50% { transform:translateX(4px); } }
+.shake,.pw.shake input { animation:shake .25s; }
+@media (prefers-reduced-motion:reduce) { *,*::before,*::after { animation-duration:.01ms!important; animation-iteration-count:1!important; transition:none!important; scroll-behavior:auto!important; } }
+
+h1,h3 { font-family:var(--display); font-weight:500; }
+body { padding:32px 24px 80px; }
+.card { background:var(--glass); border:1px solid var(--stroke); border-radius:14px; box-shadow:none; }
+.meta,.hint,.subtitle,.sub,footer { color:var(--text-3); }
+.warn { padding:14px 16px; margin-top:18px; border:1px solid var(--stroke-strong); background:var(--accent-soft); color:var(--warning); border-radius:8px; font-size:14px; }
+.loading { padding:60px 0; text-align:center; }
+.lang-btn { font-size:13px; min-height:36px; padding:6px 12px; }
+.brand-icon,.icon { background:var(--sf); border:1px solid var(--stroke); color:var(--accent); border-radius:8px; display:flex; align-items:center; justify-content:center; }
+
+body { display:flex; flex-direction:column; align-items:center; justify-content:center; padding:72px 20px 100px; }
+.card { width:100%; max-width:480px; padding:42px 36px 36px; text-align:center; }
+.file-icon { display:flex; align-items:center; justify-content:center; width:70px; height:82px; margin:0 auto 26px; border-radius:8px; background:var(--sf); border:1px solid var(--stroke); color:var(--accent); }
+.file-icon .ext { font:500 19px ui-monospace,monospace; }
+h1 { font-size:30px; line-height:1.5; overflow-wrap:anywhere; }
+.meta { margin-top:14px; display:flex; align-items:center; justify-content:center; flex-wrap:wrap; gap:10px; font-size:14px; }.meta .dot { width:3px; height:3px; border-radius:50%; background:var(--text-3); }
+.stats { display:flex; gap:0; padding:20px 0; margin-top:26px; border-top:1px solid var(--stroke); border-bottom:1px solid var(--stroke); }.stat { flex:1; padding:0 8px; }.stat + .stat { border-left:1px solid var(--stroke); }.stat .v { font:500 23px var(--display); }.stat .k { font-size:13px; color:var(--text-3); margin-top:6px; }
+.card .btn { display:flex; width:100%; margin-top:24px; padding:13px 16px; background:var(--accent); border-color:var(--accent); color:#fffdf8; min-height:48px; font-size:16px; }.btn svg { width:19px; height:19px; }
+#copy-direct { background:var(--sf)!important; border-color:var(--stroke)!important; color:var(--text-2)!important; font-size:14px!important; }
+.hint,.pw-hint { margin-top:14px; color:var(--text-3); font-size:14px; line-height:1.8; }
+.brand { position:static; text-align:center; margin-top:28px; color:var(--text-3); font-size:13px; }.brand b { font-weight:500; }.brand .lang-btn { margin-left:10px; }
+.octo-float,.code-float { position:fixed; display:flex; align-items:center; justify-content:center; width:44px; height:44px; border-radius:10px; border:1px solid var(--stroke-strong); background:var(--glass); color:var(--accent); z-index:50; cursor:pointer; }.octo-float { right:max(18px,env(safe-area-inset-right)); bottom:max(18px,env(safe-area-inset-bottom)); }.code-float { top:max(18px,env(safe-area-inset-top)); left:max(18px,env(safe-area-inset-left)); }.code-float.position-right { left:auto; right:max(18px,env(safe-area-inset-right)); }.octo-float svg,.code-float svg { width:22px; height:22px; color:var(--accent); }.code-float .badge { position:absolute; top:-3px; right:-3px; width:11px; height:11px; border-radius:50%; background:var(--success); border:2px solid var(--bg-page); }
+.pw input,.code-input-row input { width:100%; padding:13px 16px; margin-top:22px; font-size:16px; border:1px solid var(--stroke-strong); border-radius:8px; background:var(--sf-input); color:var(--text); outline:none; }.pw input { text-align:center; }.pw .err { margin-top:10px; font-size:14px; color:var(--danger); min-height:20px; }
+.ts-wrap { display:flex; justify-content:center; margin-top:22px; }.ts-passed { padding:12px; margin-top:22px; color:var(--success); background:var(--sf); border:1px solid var(--stroke); border-radius:8px; font-size:14px; }.ts-blocked-title { margin-top:22px; color:var(--warning); }.ts-blocked-hint { margin-top:8px; color:var(--text-3); font-size:14px; }
+.code-modal-mask { position:fixed; inset:0; z-index:100; background:rgba(35,31,25,.35); display:flex; align-items:center; justify-content:center; padding:20px; }.code-modal { width:100%; max-width:430px; max-height:85vh; overflow-y:auto; padding:28px; background:var(--glass); border:1px solid var(--stroke); border-radius:14px; box-shadow:0 18px 60px rgba(35,31,25,.15); }.code-modal h3 { font-size:26px; margin-bottom:8px; }.code-modal .sub { font-size:14px; }.code-modal .close { position:absolute; top:14px; right:14px; width:32px; height:32px; border:1px solid var(--stroke); border-radius:7px; background:var(--sf); color:var(--text); }
+.code-bound-row { margin-top:20px; padding:16px; background:var(--sf); border:1px solid var(--stroke); border-radius:8px; }.code-bound-row .label { font-size:13px; color:var(--success); }.code-bound-row .code { font:14px ui-monospace,monospace; margin-top:8px; overflow-wrap:anywhere; }.code-bound-row .detail { font-size:13px; margin-top:10px; display:flex; align-items:center; justify-content:space-between; gap:12px; }.unbind-btn { border:1px solid var(--stroke-strong); border-radius:6px; padding:6px 10px; background:var(--glass); color:var(--text-2); }
+.code-input-row { margin-top:20px; }.code-input-row input { margin-top:0; font-family:ui-monospace,monospace; }.code-btn-row { display:flex; gap:10px; margin-top:12px; }.code-btn-row button { flex:1; padding:11px; border:1px solid var(--stroke-strong); border-radius:7px; background:var(--sf); color:var(--text); font-size:14px; }.code-btn-row button.primary { background:var(--accent); color:#fffdf8; border-color:var(--accent); }
+.code-query-result { margin-top:14px; padding:12px; border:1px solid var(--stroke); border-radius:7px; font-size:14px; color:var(--text-2); }.code-query-result.ok { color:var(--success); }.code-query-result.warn { color:var(--warning); }.code-query-result.err { color:var(--danger); }.code-progress { height:4px; background:var(--bar-bg); margin-top:10px; overflow:hidden; }.code-progress i { display:block; height:100%; background:var(--accent); }
+@media(max-width:500px) { .card { padding:32px 22px; } h1 { font-size:26px; }.code-modal { padding:24px 20px; }.ts-wrap { margin-left:-10px; margin-right:-10px; } }
+.code-float[hidden] { display:none; }
+
+/* Retheme legacy inline presentation without changing its JavaScript. */
+[style*="color:rgba(255,255,255"], [style*="color: rgba(255,255,255"] { color:var(--text-2)!important; }
+[style*="color:#6ee7b7"], [style*="color:#34d399"], [style*="color:#16a34a"] { color:var(--success)!important; }
+[style*="color:#fcd34d"], [style*="color:#fde68a"], [style*="color:#ffd9a0"], [style*="color:#d97706"] { color:var(--warning)!important; }
+[style*="color:#fda293"], [style*="color:#ef4444"] { color:var(--danger)!important; }
+[style*="color:#a5b4fc"], [style*="color:#60a5fa"] { color:var(--accent)!important; }
+.modal [style*="background:rgba(0,0,0"], .section [style*="background:rgba(0,0,0"] { background:var(--sf)!important; }
+.logo svg { width:24px; height:24px; color:var(--accent); }
+.login-card .logo svg { width:32px; height:32px; }
+
+.oauth-block a.btn { background:var(--accent)!important; color:#fffdf8!important; border-radius:8px!important; box-shadow:none!important; }
+.oauth-block #oauth-logout { color:var(--text-2)!important; }
+#copy-direct { background:var(--sf)!important; color:var(--text)!important; }
+</style>
+</head>
+<body>
+<div class="orb o1"></div><div class="orb o2"></div><div class="orb o3"></div>
+
+<div class="card" id="app">
+  <div class="loading">
+    <div class="spinner"></div>
+    <div style="font-size:14px;color:rgba(255,255,255,.65)" id="loading-text"></div>
+  </div>
+</div>
+
+<div class="brand"><span id="brand-text">Powered by <b>nano-cloud</b></span><button class="lang-btn" id="lang-toggle"></button></div>
+
+<!-- GitHub Octocat 悬浮 -->
+<a class="octo-float" href="https://github.com/Admin666pro/cloud-oauth2" target="_blank" rel="noopener noreferrer" title="GitHub">
+  <!-- Octocat silhouette — GitHub 官方吉祥物 -->
+  <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <path d="M12 .5C5.73.5.75 5.48.75 11.75c0 4.97 3.22 9.19 7.69 10.68.56.1.77-.24.77-.54 0-.27-.01-1.16-.02-2.11-3.13.68-3.79-1.34-3.79-1.34-.51-1.3-1.25-1.64-1.25-1.64-1.02-.7.08-.68.08-.68 1.13.08 1.72 1.16 1.72 1.16 1 1.71 2.63 1.22 3.27.93.1-.73.39-1.22.71-1.5-2.5-.28-5.13-1.25-5.13-5.57 0-1.23.44-2.24 1.16-3.03-.12-.28-.5-1.43.11-2.99 0 0 .95-.3 3.11 1.15.9-.25 1.87-.37 2.83-.37.96 0 1.93.12 2.83.37 2.16-1.45 3.11-1.15 3.11-1.15.61 1.56.23 2.71.11 2.99.72.79 1.16 1.8 1.16 3.03 0 4.33-2.64 5.28-5.14 5.56.4.34.76 1.02.76 2.07 0 1.5-.01 2.71-.01 3.08 0 .3.21.65.78.54 4.46-1.49 7.68-5.71 7.68-10.68C23.25 5.48 18.27.5 12 .5z"/>
+  </svg>
+</a>
+
+<script>
+/* ═══════════ i18n ═══════════ */
+const I18N = {
+  zh: {
+    pageTitle: '分享 · {site}',
+    loading: '正在加载分享信息…',
+    notFoundTitle: '链接不存在', notFoundMsg: '该分享链接无效，或已被管理员删除。',
+    goneTitle: '链接已失效', goneMsg: '该分享已被管理员撤销。',
+    expiredTitle: '链接已过期', expiredMsg: '该分享已超过有效期，无法继续下载。',
+    maxedTitle: '下载次数已达上限', maxedMsg: '该资源允许下载 {n} 次，名额已用完。',
+    downloads: '下载次数', limit: '次数上限', size: '文件大小',
+    download: '下载文件',
+    protected: '🔒 该分享受密码保护',
+    passwordPlaceholder: '输入访问密码', unlock: '解锁下载',
+    unlockHint: '输入管理员提供的密码后即可开始下载',
+    wrongPassword: '密码错误，请重试',
+    shared: '{d} 分享', expires: '{d} 到期',
+    quotaWarn: '⚠️ 本月流量已达预设限额，下载服务已临时暂停，请联系管理员。',
+    hint: '下载由 {site} 提供 · 请勿重复下载',
+    remaining: '剩余',
+    copyDirectLink: '复制直链',
+    copied: '已复制',
+    switchTo: 'EN',
+    // Turnstile
+    turnstileBlocked: '🛡️ 需要完成人机验证',
+    turnstileHint: '该链接被管理员设为需要验证，请完成下方的人机检查后继续下载',
+    turnstileLoading: '正在加载验证组件…',
+    turnstilePass: '验证通过 ✓',
+    turnstileFail: '验证失败，请重试',
+    turnstileContinue: '继续下载',
+    turnstileDownloadNow: '立即下载',
+    // OAuth2
+    oauthLogin: '使用 {provider} 登录',
+    oauthLoggedInAs: '已登录 {provider}',
+    oauthLogout: '退出',
+    oauthContinueDownload: '继续下载',
+    oauthHint: '该资源需要通过第三方账号验证后才能下载',
+    oauthErrTitle: '登录失败',
+    oauthErrMsg: 'OAuth 登录过程中出错了，请重试或换一个方式下载。',
+    oauthRetry: '重试',
+    oauthSkip: '跳过登录（可能被拒绝）',
+    // 激活码（浮动按钮 + 弹窗）
+    codeFloatingTitle: '🎟️ 激活码',
+    codeFloatingHint: '使用激活码可绕过月度流量限额，享独立额度下载',
+    codeBound: '已绑定的激活码',
+    codeUnbind: '解绑',
+    codeInputPh: '输入 R2PAN-XXXX-XXXX-XXXX',
+    codeQuery: '查询额度',
+    codeBind: '绑定并下载',
+    codeBindSuccess: '激活码已绑定',
+    codeBindFailed: '绑定失败：{msg}',
+    codeCheckOk: '剩余 {remaining} / 总 {total}',
+    codeCheckInfinite: '剩余 ∞ (无限额度)',
+    codeCheckBad: '查询失败：{msg}',
+    codeStatusUnused: '未使用',
+    codeStatusActive: '使用中',
+    codeStatusRevoked: '已作废',
+    codeStatusExpired: '已过期',
+    codeStatusExhausted: '已耗尽',
+    codeNotBound: '未绑定激活码',
+  },
+  en: {
+    pageTitle: 'Share · {site}',
+    loading: 'Loading share info…',
+    notFoundTitle: 'Link Not Found', notFoundMsg: 'This share link is invalid or has been removed.',
+    goneTitle: 'Link Revoked', goneMsg: 'This share has been revoked by the administrator.',
+    expiredTitle: 'Link Expired', expiredMsg: 'This share has expired and is no longer available.',
+    maxedTitle: 'Download Limit Reached', maxedMsg: 'This resource allows {n} downloads and the quota is used up.',
+    downloads: 'Downloads', limit: 'Limit', size: 'File Size',
+    download: 'Download',
+    protected: '🔒 This share is password-protected',
+    passwordPlaceholder: 'Enter access password', unlock: 'Unlock & Download',
+    unlockHint: 'Enter the password provided by the administrator to download',
+    wrongPassword: 'Incorrect password, please try again',
+    shared: 'shared {d}', expires: 'expires {d}',
+    quotaWarn: '⚠️ Monthly traffic quota reached. Downloads are temporarily paused. Please contact the administrator.',
+    hint: 'Served by {site} · Please avoid duplicate downloads',
+    remaining: 'Remaining',
+    copyDirectLink: 'Copy direct link',
+    copied: 'Copied',
+    switchTo: '中文',
+    // Turnstile
+    turnstileBlocked: '🛡️ Human verification required',
+    turnstileHint: 'This link has been marked for verification. Please complete the check below to continue.',
+    turnstileLoading: 'Loading verification widget…',
+    turnstilePass: 'Verified ✓',
+    turnstileFail: 'Verification failed, please retry',
+    turnstileContinue: 'Continue download',
+    turnstileDownloadNow: 'Download now',
+    // OAuth2
+    oauthLogin: 'Login with {provider}',
+    oauthLoggedInAs: 'Logged in via {provider}',
+    oauthLogout: 'Logout',
+    oauthContinueDownload: 'Continue to Download',
+    oauthHint: 'This resource requires third-party login to download',
+    oauthErrTitle: 'Login Failed',
+    oauthErrMsg: 'Something went wrong during OAuth login. Please retry.',
+    oauthRetry: 'Retry',
+    oauthSkip: 'Skip login (may be denied)',
+    // Activation Codes (floating button + modal)
+    codeFloatingTitle: '🎟️ Activation Code',
+    codeFloatingHint: 'Use an activation code to bypass the monthly traffic quota with independent limits',
+    codeBound: 'Bound Code',
+    codeUnbind: 'Unbind',
+    codeInputPh: 'Enter R2PAN-XXXX-XXXX-XXXX',
+    codeQuery: 'Check Balance',
+    codeBind: 'Bind & Download',
+    codeBindSuccess: 'Activation code bound',
+    codeBindFailed: 'Bind failed: {msg}',
+    codeCheckOk: 'Remaining {remaining} / Total {total}',
+    codeCheckInfinite: 'Remaining ∞ (unlimited)',
+    codeCheckBad: 'Check failed: {msg}',
+    codeStatusUnused: 'Unused',
+    codeStatusActive: 'Active',
+    codeStatusRevoked: 'Revoked',
+    codeStatusExpired: 'Expired',
+    codeStatusExhausted: 'Exhausted',
+    codeNotBound: 'No code bound',
+  }
+};
+
+/** 语言检测：手动选择 > 浏览器首选语言 > 时区（大中华区） > 英文 */
+function detectLang(){
+  try {
+    const saved = localStorage.getItem('cd_lang');
+    if (saved === 'zh' || saved === 'en') return saved;
+  } catch {}
+  const first = String((navigator.languages && navigator.languages.length ? navigator.languages[0] : navigator.language) || '').toLowerCase();
+  if (first.startsWith('zh')) return 'zh';
+  if (first) return 'en';
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+    if (/^Asia\/(Shanghai|Chongqing|Harbin|Urumqi|Kashgar|Hong_Kong|Macau|Taipei)$/.test(tz)) return 'zh';
+  } catch {}
+  return 'en';
+}
+
+let LANG = detectLang();
+const t = (key, params) => {
+  let s = (I18N[LANG] && I18N[LANG][key]) ?? I18N.en[key] ?? key;
+  if (params) for (const k in params) s = s.split('{' + k + '}').join(params[k]);
+  return s;
+};
+
+document.documentElement.lang = LANG === 'zh' ? 'zh-CN' : 'en';
+$('#loading-text').textContent = t('loading');
+$('#lang-toggle').textContent = t('switchTo');
+$('#lang-toggle').onclick = () => {
+  try { localStorage.setItem('cd_lang', LANG === 'zh' ? 'en' : 'zh'); } catch {}
+  location.reload();
+};
+
+function $(s){ return document.querySelector(s); }
+
+/* ═══════════ 工具 ═══════════ */
+const EXT_COLORS = {
+  zip:'#ffb340', rar:'#ffb340', '7z':'#ffb340', tar:'#ffb340', gz:'#ffb340',
+  pdf:'#ff6961', doc:'#5b9cf5', docx:'#5b9cf5', txt:'#9aa4b2', md:'#9aa4b2',
+  xls:'#3ecf8e', xlsx:'#3ecf8e', csv:'#3ecf8e', ppt:'#ff9f0a', pptx:'#ff9f0a',
+  mp3:'#bf5af2', wav:'#bf5af2', flac:'#bf5af2', m4a:'#bf5af2',
+  mp4:'#ff453a', mov:'#ff453a', mkv:'#ff453a', avi:'#ff453a',
+  png:'#30d158', jpg:'#30d158', jpeg:'#30d158', gif:'#30d158', webp:'#30d158', svg:'#30d158',
+  apk:'#3ecf8e', exe:'#9aa4b2', iso:'#9aa4b2', dmg:'#9aa4b2', default:'#8ea0c8'
+};
+function extOf(name){ const m=/\.([a-z0-9]+)$/i.exec(name||''); return m?m[1].toLowerCase():''; }
+function extColor(name){ return EXT_COLORS[extOf(name)]||EXT_COLORS.default; }
+function fmtSize(n){
+  if(!Number.isFinite(n))return '—';
+  if(n<1024)return n+' B';
+  const u=['KB','MB','GB','TB'];let i=-1;
+  do{n/=1024;i++;}while(n>=1024&&i<u.length-1);
+  return n.toFixed(n>=100?0:n>=10?1:2)+' '+u[i];
+}
+function fmtTime(ts){
+  const d=new Date(ts),p=x=>String(x).padStart(2,'0');
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
+}
+function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+
+const token = location.pathname.split('/')[2];
+
+let TURSTILE_LOADED = false, turnstileReady = false, pendingCb = null;
+function loadTurnstileScript(onload){
+  if(TURSTILE_LOADED){ if(window.turnstile){ window.turnstile.ready(cb=>{ turnstileReady = true; onload&&onload(cb); }); } return; }
+  TURSTILE_LOADED = true;
+  window.onTurnstileLoad = () => { turnstileReady = true; onload && onload(window.turnstile); };
+  const s = document.createElement('script');
+  s.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onTurnstileLoad';
+  s.async = true; s.defer = true;
+  document.head.appendChild(s);
+}
+
+/**
+ * 渲染 Turnstile widget 并等待完成。
+ * 返回 Promise<string> —— token 字符串。
+ */
+async function renderTurnstile(containerEl, sitekey){
+  containerEl.innerHTML = '<div class="ts-wrap"><div class="ts-box" data-sitekey="'+sitekey+'"></div></div>';
+  loadTurnstileScript();
+  // 等待 window.turnstile 出现
+  await new Promise(resolve => {
+    const check = () => { if(window.turnstile){ resolve(); } else { setTimeout(check, 80); } };
+    check();
+  });
+  return await new Promise((resolve, reject) => {
+    const id = window.turnstile.render(containerEl.querySelector('.ts-box'), {
+      sitekey,
+      theme: 'auto',
+      callback: (tk) => resolve(tk),
+      'error-callback': () => reject(new Error('ts_error')),
+      'timeout-callback': () => reject(new Error('ts_timeout')),
+    });
+    containerEl.dataset.tsWidgetId = id;
+  });
+}
+
+async function boot(){
+  // OAuth callback 返回的错误参数 → 页面顶部提示
+  const params = new URLSearchParams(location.search);
+  const oauthErr = params.get('oauth_error');
+
+  let info;
+  let oauthProviders = [];
+  try{
+    const r = await fetch(`/s/${token}/info`, {cache:'no-store'});
+    if(!r.ok) throw 0;
+    info = await r.json();
+  }catch{ renderError(t('notFoundTitle'), t('notFoundMsg')); return; }
+  // 如果 OAuth2 启用了，拉启用中的 Provider 列表来渲染多个按钮
+  if (info.oauth?.enabled) {
+    try {
+      const r2 = await fetch('/oauth/providers', {cache:'no-store'});
+      if (r2.ok) {
+        const j = await r2.json();
+        oauthProviders = j.providers || [];
+      }
+    } catch {}
+  }
+  const siteName = info.site_title || 'nano-cloud';
+  document.title = t('pageTitle', {site: siteName});
+  $('#brand-text').innerHTML = `Powered by <b>${esc(siteName)}</b>`;
+  render(info, siteName, oauthErr, oauthProviders);
+}
+
+function renderError(title,msg){
+  $('#app').innerHTML = `
+    <div class="file-icon" style="font-size:44px">🚫</div>
+    <h1>${esc(title)}</h1>
+    <div class="hint" style="margin-top:12px">${esc(msg)}</div>`;
+}
+
+function render(d, siteName, oauthErr, oauthProviders){
+  const ext = extOf(d.name);
+  const gone = {
+    gone:[t('goneTitle'), t('goneMsg')],
+    expired:[t('expiredTitle'), t('expiredMsg')],
+    maxed:[t('maxedTitle'), t('maxedMsg', {n: d.max_downloads})]
+  }[d.status];
+  if(gone){ renderError(gone[0],gone[1]); return; }
+
+  // Turnstile 判断：后端返回了 needs_now (on_share 模式已判断) 或 mode=on_download 时需要
+  const ts = d.turnstile || {};
+  const tsEnabled = ts.enabled && ts.sitekey;
+  const tsOnShare = ts.mode === 'on_share' || ts.mode === 'both';
+  const tsOnDownload = ts.mode === 'on_download' || ts.mode === 'both';
+  const needTsNow = tsEnabled && ((tsOnShare && ts.needs_now) || (tsOnDownload));
+
+  // OAuth2 判断（多 Provider）
+  const oauth = d.oauth || {enabled:false, authed:false};
+  const oauthEnabled = oauth.enabled && oauthProviders && oauthProviders.length > 0;
+  const oauthAuthed = !!oauth.authed;
+
+  const oauthErrHtml = oauthErr ? `
+    <div class="warn">
+      🔐 ${esc(t('oauthErrTitle'))}<br>
+      <div style="margin-top:6px;font-size:12.5px;line-height:1.6">${esc(t('oauthErrMsg'))}</div>
+    </div>` : '';
+
+  // OAuth 登录按钮（每个 Provider 一个）
+  const PROVIDER_ICONS = {
+    github: '<svg viewBox="0 0 24 24" width="19" height="19" fill="currentColor"><path d="M12 .5C5.73.5.75 5.48.75 11.75c0 4.97 3.22 9.19 7.69 10.68.56.1.77-.24.77-.54 0-.27-.01-1.16-.02-2.11-3.13.68-3.79-1.34-3.79-1.34-.51-1.3-1.25-1.64-1.25-1.64-1.02-.7.08-.68.08-.68 1.13.08 1.72 1.16 1.72 1.16 1 1.71 2.63 1.22 3.27.93.1-.73.39-1.22.71-1.5-2.5-.28-5.13-1.25-5.13-5.57 0-1.23.44-2.24 1.16-3.03-.12-.28-.5-1.43.11-2.99 0 0 .95-.3 3.11 1.15.9-.25 1.87-.37 2.83-.37.96 0 1.93.12 2.83.37 2.16-1.45 3.11-1.15 3.11-1.15.61 1.56.23 2.71.11 2.99.72.79 1.16 1.8 1.16 3.03 0 4.33-2.64 5.28-5.14 5.56.4.34.76 1.02.76 2.07 0 1.5-.01 2.71-.01 3.08 0 .3.21.65.78.54 4.46-1.49 7.68-5.71 7.68-10.68C23.25 5.48 18.27.5 12 .5z"/></svg>',
+    google: '<svg viewBox="0 0 24 24" width="19" height="19"><path fill="#EA4335" d="M12 10.2v3.9h5.5c-.24 1.4-1.7 4.1-5.5 4.1-3.3 0-6-2.7-6-6.1s2.7-6.1 6-6.1c1.9 0 3.2.8 3.9 1.5l2.7-2.6C16.9 3 14.7 2 12 2 6.5 2 2 6.5 2 12s4.5 10 10 10c5.8 0 9.6-4.1 9.6-9.8 0-.7-.1-1.2-.2-1.7H12z"/></svg>',
+    microsoft: '<svg viewBox="0 0 24 24" width="19" height="19"><rect x="2" y="2" width="10" height="10" fill="#F25022"/><rect x="12" y="2" width="10" height="10" fill="#7FBA00"/><rect x="2" y="12" width="10" height="10" fill="#00A4EF"/><rect x="12" y="12" width="10" height="10" fill="#FFB900"/></svg>',
+    discord: '<svg viewBox="0 0 24 24" width="19" height="19" fill="#5865F2"><path d="M20.3 4.4A19.7 19.7 0 0 0 16.5 3l-.3.6a18 18 0 0 0-8.4 0L7.2 3c-1.3.2-2.6.8-3.8 1.4A20.3 20.3 0 0 0 1 17.6a20 20 0 0 0 6 3c.5-.6.9-1.3 1.3-2a12.8 12.8 0 0 1-2-.9c.2-.2.4-.3.5-.5a14.3 14.3 0 0 0 12.4 0c.2.2.4.3.5.5-.6.4-1.3.7-2 1 .4.7.8 1.4 1.3 2a20 20 0 0 0 6-3c.8-3 .6-6.1-.2-8.8zM8.1 14.5c-1 0-1.8-.9-1.8-2 0-1.1.8-2 1.8-2s1.8.9 1.8 2c0 1.1-.8 2-1.8 2zm7.8 0c-1 0-1.8-.9-1.8-2 0-1.1.8-2 1.8-2s1.8.9 1.8 2c0 1.1-.8 2-1.8 2z"/></svg>',
+    custom: '<svg viewBox="0 0 24 24" width="19" height="19" fill="currentColor"><path d="M12 1a11 11 0 1 0 0 22 11 11 0 0 0 0-22zm0 2a9 9 0 0 1 9 9c0 2.6-1.1 4.9-2.9 6.5-.7-1.4-2.1-2.3-3.7-2.3h-.5a5 5 0 0 0-3.5-1.4c-1.5 0-2.8.6-3.7 1.6A9 9 0 0 1 12 3zm0 5a2 2 0 1 1 0 4 2 2 0 0 1 0-4z"/></svg>',
+  };
+  const oauthLoginBlock = oauthEnabled && !oauthAuthed && !d.quota_exceeded ? `
+    <div class="oauth-block" style="margin-top:22px">
+      <div style="font-size:13px;color:rgba(255,255,255,.6);margin-bottom:10px">${esc(t('oauthHint'))}</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        ${oauthProviders.map(p => `
+          <a class="btn" href="${p.start_url}&redirect=${encodeURIComponent(location.pathname)}" style="background:linear-gradient(180deg,#58a6ff,#1f6feb);display:inline-flex;align-items:center;gap:8px;padding:12px 20px;border-radius:14px;text-decoration:none;font-size:13.5px;font-weight:500;color:#fff;box-shadow:0 6px 16px rgba(10,124,255,.3)">
+            ${PROVIDER_ICONS[p.provider_type] || PROVIDER_ICONS.custom}
+            ${esc(t('oauthLogin', {provider: p.label || p.name}))}
+          </a>
+        `).join('')}
+      </div>
+    </div>` : '';
+
+  // OAuth 已登录状态（如果 fetch /oauth/session 显示已登录就渲染）
+  const oauthAuthedBlock = oauthEnabled && oauthAuthed && !d.quota_exceeded ? `
+    <div class="oauth-block" style="margin-top:22px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <div style="font-size:13px;color:#6ee7b7">✓ ${esc(t('oauthLoggedInAs', {provider: oauthProviders[0]?.label || 'OAuth'}))}</div>
+        <button id="oauth-logout" style="background:none;border:none;color:rgba(255,255,255,.55);font-size:12px;cursor:pointer;padding:4px 8px;border-radius:8px">${esc(t('oauthLogout'))}</button>
+      </div>
+    </div>` : '';
+
+  $('#app').innerHTML = `
+    <div class="file-icon"><span class="ext" style="color:${extColor(d.name)}">${esc((ext||'FILE').toUpperCase())}</span></div>
+    <h1>${esc(d.name)}</h1>
+    <div class="meta">
+      <span>${fmtSize(d.size)}</span>
+      ${d.expires_at?`<span class="dot"></span><span>${esc(t('shared',{d:fmtTime(d.created_at)}))}</span><span class="dot"></span><span>${esc(t('expires',{d:fmtTime(d.expires_at)}))}</span>`
+        :`<span class="dot"></span><span>${esc(t('shared',{d:fmtTime(d.created_at)}))}</span>`}
+    </div>
+    <div class="stats">
+      ${d.max_downloads ? `<div class="stat"><div class="v">${d.max_downloads - d.downloads} <span style="font-size:14px;opacity:.5">/ ${d.max_downloads}</span></div><div class="k">${esc(t('remaining'))}</div></div>`
+        : `<div class="stat"><div class="v">∞</div><div class="k">${esc(t('remaining'))}</div></div>`}
+      <div class="stat"><div class="v">${fmtSize(d.size)}</div><div class="k">${esc(t('size'))}</div></div>
+    </div>
+    ${oauthErrHtml}
+    ${oauthLoginBlock}
+    ${oauthAuthedBlock}
+    ${d.quota_exceeded?`<div class="warn">${esc(t('quotaWarn'))}</div>`:''}
+
+    ${needTsNow && !d.quota_exceeded ? `
+      <div class="ts-blocked-title">${esc(t('turnstileBlocked'))}</div>
+      <div class="ts-blocked-hint">${esc(t('turnstileHint'))}</div>
+      <div id="ts-container" style="margin-top:6px">${esc(t('turnstileLoading'))}</div>
+    ` : ''}
+
+
+    ${d.needs_password && !d.quota_exceeded ? `
+      <div class="pw" id="pw-box">
+        <div class="pw-hint">${esc(t('protected'))}</div>
+        <input type="password" id="pw" placeholder="${esc(t('passwordPlaceholder'))}" autocomplete="off" enterkeyhint="done">
+        <div class="err" id="pw-err"></div>
+        <a class="btn" id="pw-go" href="javascript:void(0)">
+          <svg viewBox="0 0 24 24" fill="none"><rect x="5" y="11" width="14" height="9" rx="2" stroke="currentColor" stroke-width="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3" stroke="currentColor" stroke-width="2"/></svg>
+          ${esc(t('unlock'))}
+        </a>
+        <div class="pw-hint">${esc(t('unlockHint'))}</div>
+        ${d.direct_download_url ? `<button class="btn" id="copy-direct" style="margin-top:8px;background:rgba(255,255,255,.1);font-size:12px">📋 ${esc(t('copyDirectLink'))}</button>` : ''}
+      </div>`
+      :`<a class="btn" id="dl" href="javascript:void(0)" ${d.quota_exceeded?'style="pointer-events:none;opacity:.45"':''} ${oauthEnabled && !oauthAuthed?'style="pointer-events:none;opacity:.45"':''}>
+        <svg viewBox="0 0 24 24" fill="none"><path d="M12 3v12m0 0l-4.5-4.5M12 15l4.5-4.5M4 20h16" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        ${esc(t('download'))}
+      </a>
+      ${d.direct_download_url ? `<button class="btn" id="copy-direct" style="margin-top:8px;background:rgba(255,255,255,.1);font-size:12px">📋 ${esc(t('copyDirectLink'))}</button>` : ''}
+      <div class="hint">${esc(t('hint', {site: siteName}))}</div>`}
+  `;
+
+  // OAuth 登录/退出按钮绑定
+  if(oauthEnabled){
+    $('#oauth-logout')?.addEventListener('click', async () => {
+      await fetch('/oauth/logout', {method:'POST', credentials:'same-origin'});
+      location.reload();
+    });
+  }
+
+  // 复制直链按钮
+  document.getElementById('copy-direct')?.addEventListener('click', async () => {
+    const url = location.origin + (d.direct_download_url || '');
+    try {
+      await navigator.clipboard.writeText(url);
+      const btn = document.getElementById('copy-direct');
+      const origText = btn.innerHTML;
+      btn.innerHTML = '✓ ' + t('copied');
+      setTimeout(() => { btn.innerHTML = origText; }, 1500);
+    } catch {
+      // clipboard API 不可用时的回退
+      const ta = document.createElement('textarea'); ta.value = url; document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); } catch {}
+      ta.remove();
+    }
+  });
+
+  // 下载按钮绑定（OAuth 未登录时禁用）
+  if(!d.needs_password && !d.quota_exceeded){
+    $('#dl').onclick = () => {
+      if(oauthEnabled && !oauthAuthed){
+        // 跳转到第一个可用 Provider 的登录页
+        const firstStart = oauthProviders[0]?.start_url;
+        if (firstStart) {
+          location.href = firstStart + '&redirect=' + encodeURIComponent(location.pathname);
+        }
+        return;
+      }
+      triggerDownload(d, ts, tsEnabled, tsOnDownload);
+    };
+  }
+
+  if(d.needs_password && $('#pw')) wireUnlock(d, ts, tsEnabled, tsOnDownload, oauthEnabled, oauthAuthed, oauthProviders);
+
+  // ═══════ 激活码浮动按钮 & 弹窗 ═══════
+  function getBoundCode(){ try { return localStorage.getItem('r2pan_code')?.trim().toUpperCase() || null; } catch { return null; } }
+  function setBoundCode(c){ try { if(c) localStorage.setItem('r2pan_code', c.trim().toUpperCase()); else localStorage.removeItem('r2pan_code'); } catch {} }
+
+  // 更新浮动按钮上的绑定状态 badge
+  function updateCodeFloatBadge(){
+    const badge = document.getElementById('code-float-badge');
+    if(!badge) return;
+    badge.style.display = getBoundCode() ? 'block' : 'none';
+  }
+  updateCodeFloatBadge();
+
+  // 格式化字节数
+  const fmtBytes = n => { n = Number(n)||0; if(n<1024) return n+' B'; const u=['KB','MB','GB','TB']; let i=-1; do{n/=1024;i++;}while(n>=1024&&i<u.length-1); return n.toFixed(n>=100?0:n>=10?1:2)+' '+u[i]; };
+
+  // 状态映射
+  const statusMap = { unused: t('codeStatusUnused'), active: t('codeStatusActive'), revoked: t('codeStatusRevoked'), expired: t('codeStatusExpired'), exhausted: t('codeStatusExhausted') };
+  const statusColorMap = { unused: '#9aa4b2', active: '#60a5fa', revoked: '#a3a3a3', expired: '#fbbf24', exhausted: '#f87171' };
+
+  // 渲染激活码弹窗
+  function openCodeModal(){
+    const boundCode = getBoundCode();
+    const mask = document.createElement('div');
+    mask.className = 'code-modal-mask';
+    mask.innerHTML = `
+      <div class="code-modal" style="position:relative">
+        <h3>${esc(t('codeFloatingTitle'))}</h3>
+        <div class="sub">${esc(t('codeFloatingHint'))}</div>
+        <button class="close" title="Close">✕</button>
+        ${boundCode ? `
+        <div class="code-bound-row">
+          <div class="label">${esc(t('codeBound'))}</div>
+          <div class="code">${esc(boundCode)}</div>
+          <div class="detail">
+            <span id="code-bound-status">...</span>
+            <button class="unbind-btn" id="code-unbind">${esc(t('codeUnbind'))}</button>
+          </div>
+        </div>
+        ` : ''}
+        <div class="code-input-row">
+          <input type="text" id="code-input" placeholder="${esc(t('codeInputPh'))}" oninput="this.value=this.value.toUpperCase()" autocomplete="off">
+          <div class="code-btn-row">
+            <button id="code-query">${esc(t('codeQuery'))}</button>
+            <button id="code-bind" class="primary">${esc(t('codeBind'))}</button>
+          </div>
+        </div>
+        <div class="code-query-result" id="code-query-result" style="display:none"></div>
+      </div>
+    `;
+    document.body.appendChild(mask);
+    const close = () => { mask.remove(); };
+    mask.querySelector('.close').onclick = close;
+    mask.onclick = e => { if(e.target === mask) close(); };
+    const input = mask.querySelector('#code-input');
+    setTimeout(() => input?.focus(), 100);
+
+    // 绑定状态查询
+    if(boundCode){
+      fetch('/api/codes/status?code=' + encodeURIComponent(boundCode)).then(r => r.json()).then(d => {
+        const st = d.status || {};
+        const rem = st.remaining;
+        const pct = st.pct || 0;
+        const statusTxt = statusMap[st.status] || st.status;
+        const color = statusColorMap[st.status] || '#fff';
+        let detailHtml = `<span style="color:${color}">${esc(statusTxt)}</span>`;
+        if(rem !== undefined){
+          const remStr = rem === -1 ? t('codeCheckInfinite') : t('codeCheckOk', { remaining: fmtBytes(rem), total: st.total>0?fmtBytes(st.total):'∞' });
+          detailHtml = `<span style="color:${color}">${esc(statusTxt)}</span> · ${esc(remStr)}`;
+          if(rem !== -1 && pct > 0){
+            detailHtml += `<div class="code-progress" style="margin-top:6px;width:100%"><i style="width:${pct}%"></i></div>`;
+          }
+        }
+        mask.querySelector('#code-bound-status').innerHTML = detailHtml;
+      }).catch(() => { mask.querySelector('#code-bound-status').textContent = '—'; });
+    }
+
+    // 查询按钮
+    const resultBox = mask.querySelector('#code-query-result');
+    mask.querySelector('#code-query').onclick = async () => {
+      const code = input.value.trim().toUpperCase();
+      if(!code) return;
+      resultBox.style.display = 'block'; resultBox.className = 'code-query-result'; resultBox.textContent = '...';
+      try {
+        const r = await fetch('/api/codes/status?code=' + encodeURIComponent(code));
+        const d = await r.json();
+        const st = d.status || {};
+        if(r.ok){
+          const rem = st.remaining;
+          if(rem === -1){ resultBox.textContent = t('codeCheckInfinite'); resultBox.className = 'code-query-result ok'; }
+          else {
+            const pct = st.pct || 0;
+            resultBox.innerHTML = t('codeCheckOk', { remaining: fmtBytes(rem), total: st.total>0?fmtBytes(st.total):'∞' });
+            if(pct > 0) resultBox.innerHTML += `<div class="code-progress"><i style="width:${pct}%"></i></div>`;
+            resultBox.className = 'code-query-result ok';
+          }
+          if(!d.usable && d.reason){ resultBox.textContent += ' ⚠ ' + (d.message || statusMap[st.status] || d.reason); resultBox.className = 'code-query-result warn'; }
+        } else {
+          resultBox.textContent = d.message || t('codeCheckBad', {msg: 'not found'}); resultBox.className = 'code-query-result err';
+        }
+      } catch(err){ resultBox.textContent = t('codeCheckBad', {msg: err.message}); resultBox.className = 'code-query-result err'; }
+    };
+
+    // 绑定按钮（保存到 localStorage 并校验）
+    mask.querySelector('#code-bind').onclick = async () => {
+      const code = input.value.trim().toUpperCase();
+      if(!code) return;
+      resultBox.style.display = 'block'; resultBox.className = 'code-query-result'; resultBox.textContent = '...';
+      try {
+        const r = await fetch('/api/codes/status?code=' + encodeURIComponent(code));
+        const d = await r.json();
+        if(r.ok){
+          if(!d.usable){
+            resultBox.textContent = d.message || t('codeBindFailed', {msg: d.reason});
+            resultBox.className = 'code-query-result err';
+            return;
+          }
+          setBoundCode(code);
+          updateCodeFloatBadge();
+          resultBox.textContent = t('codeBindSuccess');
+          resultBox.className = 'code-query-result ok';
+          setTimeout(close, 800);
+        } else {
+          resultBox.textContent = d.message || t('codeBindFailed', {msg: 'not found'});
+          resultBox.className = 'code-query-result err';
+        }
+      } catch(err){ resultBox.textContent = t('codeBindFailed', {msg: err.message}); resultBox.className = 'code-query-result err'; }
+    };
+
+    // 解绑按钮
+    const unbindBtn = mask.querySelector('#code-unbind');
+    if(unbindBtn){
+      unbindBtn.onclick = () => {
+        setBoundCode(null);
+        updateCodeFloatBadge();
+        close();
+      };
+    }
+
+    // Enter 键 → 绑定
+    input?.addEventListener('keydown', e => {
+      if(e.key === 'Enter') { e.preventDefault(); mask.querySelector('#code-bind').click(); }
+    });
+  }
+
+  // 浮动按钮点击 → 打开弹窗
+  document.getElementById('code-float')?.addEventListener('click', openCodeModal);
+
+
+  // 如果 on_share 模式需要弹 Turnstile，现在就开始渲染
+  if(needTsNow && tsOnShare && ts.sitekey){
+    const box = $('#ts-container');
+    renderTurnstile(box, ts.sitekey).then(tk => {
+      box.innerHTML = `<div class="ts-passed">${esc(t('turnstilePass'))}</div>`;
+      window.__tsToken = tk;
+    }).catch(() => { box.innerHTML = `<div class="warn" style="text-align:center;font-size:12.5px">${esc(t('turnstileFail'))}</div>`; });
+  }
+}
+
+async function triggerDownload(d, ts, tsEnabled, tsOnDownload){
+  const baseUrl = `/s/${token}/download`;
+  // 读取已绑定的激活码（从 localStorage）
+  const code = getBoundCode();
+  // both / on_download 模式：先确保有 token
+  if(tsEnabled && tsOnDownload){
+    let tk = window.__tsToken;
+    if(!tk){
+      // 还没渲染过 → 现在渲染
+      const box = document.createElement('div');
+      box.style.cssText = 'margin-top:20px';
+      document.body.appendChild(box);
+      try{
+        tk = await renderTurnstile(box, ts.sitekey);
+        window.__tsToken = tk;
+        box.remove();
+      }catch{ box.remove(); return; }
+    }
+    let url = `${baseUrl}?cf=${tk}`;
+    if(code) url += `&code=${encodeURIComponent(code)}`;
+    location.href = url;
+  } else {
+    let url = baseUrl;
+    if(code) url += `?code=${encodeURIComponent(code)}`;
+    location.href = url;
+  }
+}
+
+async function wireUnlock(d, ts, tsEnabled, tsOnDownload){
+  const btn = $('#pw-go'), input = $('#pw'), err = $('#pw-err');
+  const unlock = async () => {
+    const pass = input.value;
+    if(!pass) return;
+    // 读取已绑定的激活码（从 localStorage）
+    const code = getBoundCode();
+    btn.style.pointerEvents = 'none'; btn.style.opacity = '.6';
+    err.textContent = '';
+    // both 模式：需要 Turnstile token
+    let turnstileToken = null;
+    if(tsEnabled && ts.mode === 'both'){
+      let tk = window.__tsToken;
+      if(!tk){
+        const box = document.createElement('div');
+        box.style.cssText = 'margin-top:14px';
+        document.getElementById('pw-box').appendChild(box);
+        try{
+          tk = await renderTurnstile(box, ts.sitekey);
+          window.__tsToken = tk;
+          box.innerHTML = `<div class="ts-passed">${esc(t('turnstilePass'))}</div>`;
+        }catch(e){ box.remove(); err.textContent = t('turnstileFail'); btn.style.pointerEvents = ''; btn.style.opacity = ''; return; }
+      }
+      turnstileToken = tk;
+    }
+    try{
+      const body = { password: pass };
+      if(turnstileToken) body.turnstile = turnstileToken;
+      const r = await fetch(`/s/${token}/verify`, { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(body) });
+      let res = {};
+      try{ res = await r.json(); }catch{}
+      if(r.ok && res.url){
+        // on_download 模式需要 cf 参数
+        if(tsEnabled && tsOnDownload && !res.url.includes('cf=')){
+          let tk = window.__tsToken;
+          if(!tk){
+            const box = document.createElement('div');
+            box.style.cssText = 'margin-top:14px';
+            document.getElementById('pw-box').appendChild(box);
+            tk = await renderTurnstile(box, ts.sitekey);
+            window.__tsToken = tk;
+            box.innerHTML = `<div class="ts-passed">${esc(t('turnstilePass'))}</div>`;
+          }
+          const sep = res.url.includes('?') ? '&' : '?';
+          let dlUrl = res.url + sep + 'cf=' + tk;
+          if(code){ const s2 = dlUrl.includes('?') ? '&' : '?'; dlUrl += s2 + 'code=' + encodeURIComponent(code); }
+          location.href = dlUrl;
+        } else {
+          let dlUrl = res.url;
+          if(code){ const s2 = dlUrl.includes('?') ? '&' : '?'; dlUrl += s2 + 'code=' + encodeURIComponent(code); }
+          location.href = dlUrl;
+        }
+        return;
+      }
+      err.textContent = t(res.error === 'bad_password' ? 'wrongPassword' : 'wrongPassword');
+      $('#pw-box').classList.remove('shake'); void $('#pw-box').offsetWidth; $('#pw-box').classList.add('shake');
+      input.select();
+    }catch{
+      err.textContent = t('wrongPassword');
+    }
+    btn.style.pointerEvents = ''; btn.style.opacity = '';
+  };
+  btn.onclick = unlock;
+  input.addEventListener('keydown', e => { if(e.key === 'Enter') unlock(); });
+}
+
+boot();
+</script>
+</body>
+</html>

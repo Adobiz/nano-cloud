@@ -1,0 +1,3415 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>nano-cloud</title>
+<style>
+
+/* Warm editorial design tokens, shared by the three HTML entry points. */
+:root {
+  color-scheme:light;
+  --bg-page:#f6f4ee; --glass:#fffdf8; --glass-strong:#fffdf8;
+  --text:#302e29; --text-2:#655f56; --text-3:#787066;
+  --stroke:#e4dfd5; --stroke-strong:#cec7ba; --blue:#a64f36;
+  --accent:#a64f36; --accent-soft:#f0e1d7; --success:#35664c;
+  --warning:#8a5b18; --danger:#a13c32;
+  --sf-soft:#f8f6f0; --sf:#efece4; --sf-strong:#e9e4d9;
+  --sf-input:#fffdf8; --sf-input-focus:#fffdf8;
+  --track-bg:#ded8cc; --bar-bg:#eae4d9;
+  --tbl-divider:#ece7dd; --tbl-hover:#f6f2e9; --tbl-row-border:#ece7dd;
+  --scrollbar-thumb:#c8c0b3; --radius:12px;
+  --display:"Songti SC","STSong",Georgia,"Times New Roman",serif;
+  --body:"PingFang SC","Microsoft YaHei",-apple-system,BlinkMacSystemFont,sans-serif;
+}
+* { box-sizing:border-box; margin:0; padding:0; }
+html { -webkit-text-size-adjust:100%; }
+body { font-family:var(--body); color:var(--text); background:var(--bg-page); font-size:15px; line-height:1.65; min-height:100vh; overflow-x:hidden; }
+::selection { background:var(--accent-soft); }
+button,input,select,textarea { font:inherit; }
+button,a,input,select,textarea { -webkit-tap-highlight-color:transparent; }
+button,a { touch-action:manipulation; }
+a { color:var(--accent); text-underline-offset:4px; }
+a:hover { text-decoration:underline; }
+h1,h2,h3,p { text-wrap:pretty; }
+:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+input:focus,textarea:focus,select:focus { border-color:var(--accent)!important; }
+input::placeholder,textarea::placeholder { color:var(--text-3); }
+button { cursor:pointer; }
+button:disabled,.btn[disabled] { opacity:.45; cursor:not-allowed; pointer-events:none; }
+button:active,.btn:active { transform:translateY(1px); }
+.orb { display:none; }
+::-webkit-scrollbar { width:8px; height:8px; }
+::-webkit-scrollbar-thumb { background:var(--scrollbar-thumb); border:2px solid var(--bg-page); border-radius:8px; }
+.mono { font-family:ui-monospace,"SF Mono",monospace; font-size:13px; }
+.btn,.lang-btn { display:inline-flex; align-items:center; justify-content:center; gap:8px; min-height:40px; padding:9px 16px; border:1px solid var(--stroke-strong); border-radius:8px; background:var(--glass); color:var(--text); font-size:14px; font-weight:500; text-decoration:none; transition:background .15s,border-color .15s; }
+.btn:hover,.lang-btn:hover { background:var(--sf); border-color:var(--text-3); text-decoration:none; }
+.btn.primary { background:var(--accent); color:#fffdf8; border-color:var(--accent); }
+.btn.primary:hover { filter:brightness(.94); }
+.btn.danger { color:var(--danger); background:transparent; border-color:var(--stroke-strong); }
+.btn.danger:hover { background:var(--accent-soft); }
+.btn.sm { min-height:34px; padding:6px 11px; font-size:13px; }
+.empty { text-align:center; padding:48px 20px; color:var(--text-3); }
+.empty .icon,.empty .emoji { font-size:32px; margin-bottom:12px; }
+.spin,.spinner { width:28px; height:28px; margin:28px auto; border:2px solid var(--stroke); border-top-color:var(--accent); border-radius:50%; animation:spin .8s linear infinite; }
+@keyframes spin { to { transform:rotate(360deg); } }
+@keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
+@keyframes shake { 0%,100% { transform:translateX(0); } 25%,75% { transform:translateX(-4px); } 50% { transform:translateX(4px); } }
+.shake,.pw.shake input { animation:shake .25s; }
+@media (prefers-reduced-motion:reduce) { *,*::before,*::after { animation-duration:.01ms!important; animation-iteration-count:1!important; transition:none!important; scroll-behavior:auto!important; } }
+
+:root[data-theme="dark"],:root[data-theme="apple-dark"] {
+  color-scheme:dark; --bg-page:#262522; --glass:#302f2b; --glass-strong:#35342f;
+  --text:#efede5; --text-2:#c2bcb0; --text-3:#aaa294; --stroke:#444139; --stroke-strong:#5d574c;
+  --accent:#d99b7b; --blue:#d99b7b; --accent-soft:#49382d; --success:#9bbba6; --warning:#e3b97d; --danger:#edafa6;
+  --sf-soft:#2c2b27; --sf:#3b3932; --sf-strong:#474239; --sf-input:#2c2b27; --sf-input-focus:#35342f;
+  --track-bg:#514b40; --bar-bg:#444037; --tbl-divider:#444139; --tbl-hover:#39372f; --tbl-row-border:#444139; --scrollbar-thumb:#655d50;
+}
+:root[data-theme="dark"] .btn.primary,:root[data-theme="apple-dark"] .btn.primary { color:#262522; }
+#app { position:relative; }
+.wrap { max-width:1380px; margin:auto; padding:0 32px 64px; }
+.topbar { display:flex; align-items:center; gap:14px; min-height:96px; border-bottom:1px solid var(--stroke); margin-bottom:30px; flex-wrap:wrap; padding:18px 0; }
+.logo { display:flex; align-items:center; justify-content:center; width:36px; height:36px; border-radius:9px; background:transparent; flex:none; }
+.logo img { width:100%; height:100%; display:block; }
+.topbar h1 { font:500 25px/1.25 var(--display); letter-spacing:-.5px; }
+.topbar .sub { font-size:13px; color:var(--text-3); margin-top:5px; }
+.spacer { flex:1; }
+.traffic-pill { display:flex; align-items:center; gap:10px; font-size:13px; padding:8px 12px; border:1px solid var(--stroke); border-radius:8px; cursor:pointer; }
+.traffic-pill .bar { width:42px; height:4px; background:var(--bar-bg); border-radius:2px; overflow:hidden; }
+.traffic-pill .bar i { display:block; height:100%; background:var(--accent); }
+.traffic-pill.danger { color:var(--danger); }
+.layout { display:flex; align-items:flex-start; gap:36px; }
+#view { flex:1; min-width:0; }
+.sidebar { width:192px; flex:none; position:sticky; top:24px; max-height:calc(100vh - 48px); overflow-y:auto; padding:0 16px 0 0; border-right:1px solid var(--stroke); display:flex; flex-direction:column; gap:5px; }
+.sb-main,.sb-sub button { display:flex; align-items:center; gap:9px; width:100%; border:0; background:transparent; color:var(--text-2); text-align:left; padding:11px 12px; border-radius:7px; min-height:44px; }
+.sb-main { font-size:14px; font-weight:500; }
+.sb-main .ic,.sb-sub .ic { display:none; }
+.sb-main .chev { margin-left:auto; font-size:9px; color:var(--text-3); transition:transform .15s; }
+.sb-main.open .chev { transform:rotate(90deg); }
+.sb-main:hover,.sb-sub button:hover { background:var(--sf); }
+.sb-main.open { color:var(--text); }
+.sb-main.active,.sb-sub button.active { color:var(--accent); background:var(--accent-soft); }
+.sb-sub { display:none; flex-direction:column; padding:0 0 12px 10px; gap:3px; }
+.sb-sub.open { display:flex; }
+.sb-sub button { font-size:14px; min-height:40px; padding:8px 12px; }
+.glass,.group { border:1px solid var(--stroke); background:var(--glass); border-radius:var(--radius); }
+.section { overflow-x:auto; padding:26px; margin-bottom:22px; }
+.section-title { display:flex; justify-content:space-between; align-items:center; gap:14px; flex-wrap:wrap; margin-bottom:20px; }
+.section-title h2 { font:500 23px/1.4 var(--display); }
+.stat-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(185px,1fr)); gap:16px; margin-bottom:24px; }
+.stat-card { padding:22px; border-radius:10px; }
+.stat-card .label { color:var(--text-2); font-size:14px; }
+.stat-card .value { font:400 32px/1.3 var(--display); margin-top:12px; font-variant-numeric:tabular-nums; }
+.stat-card .value small { font:14px var(--body); color:var(--text-3); margin-left:6px; }
+.stat-card .foot { font-size:13px; color:var(--text-3); margin-top:12px; }
+.progress { height:5px; background:var(--bar-bg); overflow:hidden; border-radius:3px; margin-top:16px; }
+.progress i { display:block; height:100%; background:var(--accent); }
+.progress.hot i { background:var(--warning); }
+.chart { display:flex; align-items:flex-end; gap:7px; height:166px; padding-top:22px; }
+.chart .col { display:flex; flex:1; min-width:0; height:100%; flex-direction:column; align-items:center; justify-content:flex-end; gap:9px; }
+.chart .bar { width:100%; max-width:30px; min-height:3px; background:var(--accent); border-radius:3px 3px 0 0; position:relative; }
+.chart .bar:hover { opacity:.8; }
+.chart .bar span { position:absolute; top:-26px; left:50%; transform:translateX(-50%); white-space:nowrap; opacity:0; color:var(--text-2); font-size:12px; }
+.chart .bar:hover span { opacity:1; }
+.chart .day { color:var(--text-3); font-size:12px; }
+.tbl { width:100%; border-collapse:collapse; font-size:14px; }
+.tbl th { padding:12px 10px; text-align:left; font-size:13px; font-weight:500; color:var(--text-3); border-bottom:1px solid var(--stroke); white-space:nowrap; }
+.tbl td { padding:15px 10px; border-bottom:1px solid var(--tbl-divider); white-space:nowrap; vertical-align:middle; }
+.tbl tr:last-child td { border-bottom:0; }
+.tbl tbody tr:hover { background:var(--tbl-hover); }
+.tbl .num { font-variant-numeric:tabular-nums; }
+.name-cell { max-width:260px; overflow:hidden; text-overflow:ellipsis; }
+.ficon { display:inline-flex; align-items:center; justify-content:center; width:36px; height:40px; border:1px solid var(--stroke); border-radius:5px; background:var(--sf-soft); font:600 10px ui-monospace,monospace; vertical-align:middle; }
+.actions-cell { display:flex; gap:6px; }
+.dropzone { text-align:center; padding:38px 20px; border:1px dashed var(--stroke-strong); border-radius:12px; background:var(--sf-soft); cursor:pointer; margin-bottom:18px; }
+.dropzone:hover,.dropzone.over { background:var(--accent-soft); border-color:var(--accent); }
+.dropzone .icon { display:none; }
+.dropzone .t { font:500 24px var(--display); }
+.dropzone .d { font-size:14px; color:var(--text-3); margin-top:10px; }
+.upload-item { display:flex; align-items:center; gap:12px; padding:14px; margin:10px 0; }
+.upload-item .prog { flex:1; height:5px; background:var(--bar-bg); overflow:hidden; }
+.upload-item .prog i { display:block; height:100%; width:0; background:var(--accent); }
+.upload-item .pct { min-width:44px; font-size:13px; color:var(--text-2); }
+.field { margin-bottom:18px; }
+.field label { display:block; font-size:14px; color:var(--text-2); margin-bottom:7px; }
+.field input,.field select,.link-box input { width:100%; padding:11px 13px; border:1px solid var(--stroke-strong); border-radius:7px; background:var(--sf-input); color:var(--text); outline:none; }
+.field .tip { font-size:13px; color:var(--text-3); margin-top:6px; }
+.group { margin-bottom:20px; overflow:hidden; }
+.group .row { display:flex; align-items:center; gap:18px; padding:20px 24px; border-bottom:1px solid var(--tbl-row-border); }
+.group .row:last-child { border-bottom:0; }
+.group .info { flex:1; min-width:0; }
+.group .info .t { font-size:15px; font-weight:500; }
+.group .info .d { font-size:13px; color:var(--text-3); margin-top:5px; }
+.group .row input[type=number],.group .row input[type=text] { width:150px; padding:9px 12px; border-radius:7px; border:1px solid var(--stroke-strong); background:var(--sf-input); color:var(--text); }
+.switch { position:relative; width:44px; height:26px; flex:none; cursor:pointer; }
+.switch input { position:absolute; width:100%; height:100%; opacity:0; }
+.switch .track { position:absolute; inset:0; border-radius:20px; background:var(--track-bg); pointer-events:none; }
+.switch .thumb { position:absolute; left:3px; top:3px; width:20px; height:20px; border-radius:50%; background:#fffdf8; transition:transform .15s; }
+.switch input:checked + .track { background:var(--accent); }
+.switch input:checked + .track .thumb { transform:translateX(18px); }
+.switch input:focus-visible + .track { outline:2px solid var(--accent); outline-offset:3px; }
+.modal-mask { position:fixed; inset:0; z-index:100; display:flex; align-items:center; justify-content:center; background:rgba(35,31,25,.35); padding:24px; }
+.modal { width:100%; max-width:500px; max-height:88vh; overflow-y:auto; padding:28px; border:1px solid var(--stroke); border-radius:14px; background:var(--glass-strong); box-shadow:0 18px 60px rgba(35,31,25,.15); }
+.modal h3 { font:500 27px/1.4 var(--display); margin-bottom:8px; }
+.modal .sub { color:var(--text-3); font-size:14px; margin-bottom:22px; }
+.modal .actions { display:flex; gap:10px; margin-top:24px; }
+.modal .actions .btn { flex:1; }
+.link-box { display:flex; gap:8px; }
+.link-box input { flex:1; min-width:0; }
+#toasts { position:fixed; top:20px; left:50%; transform:translateX(-50%); z-index:200; display:flex; flex-direction:column; align-items:center; gap:8px; pointer-events:none; }
+.toast { padding:11px 20px; max-width:86vw; border:1px solid var(--stroke); border-radius:8px; background:var(--glass-strong); color:var(--text); box-shadow:0 6px 24px rgba(35,31,25,.12); font-size:14px; }
+.toast.ok { border-color:var(--success); }.toast.err { border-color:var(--danger); }.toast.out { opacity:0; }
+.pager { display:flex; align-items:center; justify-content:center; gap:10px; margin-top:20px; }.pager .info { color:var(--text-3); font-size:13px; }
+.tag { display:inline-flex; align-items:center; gap:6px; padding:4px 9px; border-radius:5px; font-size:12px; background:var(--sf); color:var(--text-2); }
+.tag.active { color:var(--success); }.tag.expired,.tag.maxed { color:var(--warning); }.tag.revoked { color:var(--danger); }.tag i { width:5px; height:5px; border-radius:50%; background:currentColor; }
+.banner { display:flex; gap:12px; padding:18px 20px; border:1px solid var(--stroke-strong); border-radius:10px; background:var(--accent-soft); margin-bottom:20px; }
+.banner .t { color:var(--warning); font-size:15px; }.banner .d { font-size:14px; color:var(--text-2); margin-top:5px; }
+#login-view { min-height:100vh; display:flex; align-items:center; justify-content:center; padding:32px 20px; }
+.login-card { max-width:420px; width:100%; padding:44px 36px; text-align:center; }
+.login-card .logo { width:46px; height:46px; margin:0 auto 26px; }
+.login-card h1 { font:500 34px/1.3 var(--display); }
+.login-card .sub { font-size:14px; color:var(--text-3); margin:14px 0 28px; }
+.login-card input { width:100%; padding:13px 15px; color:var(--text); background:var(--sf-input); border:1px solid var(--stroke-strong); border-radius:8px; font-size:16px; }
+.login-card .btn { width:100%; margin-top:14px; min-height:46px; }
+.login-card .err { min-height:20px; color:var(--danger); font-size:14px; margin-top:10px; }.login-card .lang-row { margin-top:18px; }
+@media(max-width:760px) {
+ .wrap { padding:0 16px 40px; }.topbar { gap:10px; min-height:80px; margin-bottom:20px; }.topbar .sub { display:none; }.topbar .traffic-pill { order:5; width:100%; }.topbar h1 { font-size:21px; }
+ .layout { flex-direction:column; gap:22px; }.sidebar { position:static; width:100%; max-height:none; border:0; border-bottom:1px solid var(--stroke); padding:0 0 14px; flex-direction:row; flex-wrap:wrap; }.sb-main { width:auto; }.sb-sub { width:100%; order:6; padding:8px 0; flex-direction:row; flex-wrap:wrap; }.sb-sub button { width:auto; }.sb-main .chev { display:none; }
+ #view { width:100%; }.section { padding:18px; }.stat-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }.stat-card { padding:16px; }.stat-card .value { font-size:26px; }.group .row { flex-wrap:wrap; padding:18px; }.group .row .info { flex-basis:65%; }.group textarea { max-width:100%; }.group input,.group select { max-width:100%; }.modal-mask { padding:12px; }.modal { padding:22px; }.actions-cell { flex-wrap:wrap; }.tbl { min-width:600px; }.chart .day { font-size:10px; }
+}
+
+/* Retheme legacy inline presentation without changing its JavaScript. */
+[style*="color:rgba(255,255,255"], [style*="color: rgba(255,255,255"] { color:var(--text-2)!important; }
+[style*="color:#6ee7b7"], [style*="color:#34d399"], [style*="color:#16a34a"] { color:var(--success)!important; }
+[style*="color:#fcd34d"], [style*="color:#fde68a"], [style*="color:#ffd9a0"], [style*="color:#d97706"] { color:var(--warning)!important; }
+[style*="color:#fda293"], [style*="color:#ef4444"] { color:var(--danger)!important; }
+[style*="color:#a5b4fc"], [style*="color:#60a5fa"] { color:var(--accent)!important; }
+.modal [style*="background:rgba(0,0,0"], .section [style*="background:rgba(0,0,0"] { background:var(--sf)!important; }
+.logo svg { width:24px; height:24px; color:var(--accent); }
+.login-card .logo svg { width:32px; height:32px; }
+</style>
+</head>
+<body>
+<div class="orb o1"></div><div class="orb o2"></div><div class="orb o3"></div>
+<div id="toasts"></div>
+<div id="app"><div class="spin"></div></div>
+
+<script>
+/* ═══════════ i18n ═══════════ */
+const I18N = {
+  zh: {
+    docTitle: '{site} · 管理后台',
+    // 通用
+    login: '登录', logout: '退出', cancel: '取消', confirm: '确定', copy: '复制', close: '关闭',
+    copied: '已复制到剪贴板', save: '保存设置', saved: '设置已保存', forever: '永久',
+    switchTo: 'EN', topbarSub: '管理后台 · Cloudflare Workers + R2',
+    // 登录
+    loginSubtitle: '管理后台 · 请输入管理密钥登录', keyPlaceholder: '管理密钥 (admin)',
+    // 标签
+    tabOverview: '概览', tabFiles: '文件', tabStorage: '存储浏览', tabShares: '分享', tabDirect: '直链', tabLogs: '记录', tabBans: '封禁', tabGlobal: '全球分布', tabSecurity: '安全', tabSettings: '设置', tabWebDAV: 'WebDAV',
+    navContent: '内容管理', navAnalytics: '运营分析', navSecurity: '安全中心', navSystem: '系统设置',
+    // 概览
+    statTraffic: '本月流量', usedPercent: '已用 {n}% · 跨月自动重置', noLimit: '未设置限额',
+    statDownloads: '累计下载', todayN: '今日 {n} 次', statFiles: '文件总数', storedR2: '存储于 R2 对象存储',
+    statShares: '分享链接', sharesFoot: '有效 {a} 个 · 封禁 IP {b} 个',
+    chartTitle: '近 14 天下载趋势', recentTitle: '最近下载', viewAll: '查看全部', noLogsYet: '还没有下载记录',
+    quotaBannerT: '流量已达预设限额，下载服务已自动暂停',
+    quotaBannerD: '所有公开下载请求都会被拦截。你可以在「设置」中调高限额，或重置本月流量。',
+    times: '次', unlimitedShort: '无限',
+    // 表格列
+    colFile: '文件', colIP: 'IP', colBrowser: '浏览器', colOS: '系统', colTraffic: '流量', colTime: '时间',
+    colCountry: '国家', colName: '文件名', colSize: '大小', colShareCount: '分享数', colDownloads: '下载量',
+    colUploaded: '上传时间', colActions: '操作', colLink: '链接', colCreated: '创建时间',
+    colExpires: '有效期', colStatus: '状态', colReason: '原因', colBannedAt: '封禁时间', colUntil: '到期',
+    // 文件
+    dropTitle: '拖拽文件到此处，或点击上传',
+    dropDesc: '单文件最大 100 MB（Workers 请求限制）· 直传 R2 对象存储',
+    allFiles: '全部文件', noFiles: '还没有文件，上传一个试试', createShare: '创建分享', createDirect: '创建直链', del: '删除',
+    tooLarge: '「{name}」超过 100 MB 限制', uploadOk: '「{name}」上传成功', uploadFail: '「{name}」上传失败',
+    uploadDone: '完成 ✅', uploadFailShort: '失败',
+    // 分享弹窗
+    shareModalTitle: '创建分享链接', shareModalSub: '生成公开下载链接，可设置有效期与下载次数上限',
+    validity: '有效期', perm: '永久有效', h1: '1 小时', d1: '1 天', d7: '7 天', d30: '30 天',
+    sharePassword: '访问密码（可选）', sharePasswordPh: '留空则无需密码',
+    sharePasswordHint: '设置后，访客需输入密码才能下载。',
+    downloadName: '下载时显示名（可选）', downloadNamePh: '留空则用原始文件名',
+    downloadNameHint: '访客下载时看到的文件名，隐藏真实路径中的敏感信息。',
+    maxDownloadsLabel: '下载次数上限（留空或 0 = 不限）', unlimitedPlaceholder: '不限',
+    maxTip: '达到上限后链接自动失效。单 IP 重复下载限制由「设置」统一控制。',
+    generate: '生成链接', shareCreated: '分享链接已创建 ✨', shareCreatedSub: '复制下面的链接发给需要的人',
+    sharePageLink: '分享页（访客先看到密码/验证页）',
+    directModalTitle: '创建直链', directModalSub: '生成一个拿了就能下的直链，无密码无界面',
+    preview: '预览分享页',
+    // 分享列表
+    sharesTitle: '分享链接', cleanup: '清理失效分享',
+    stActive: '有效', stExpired: '已过期', stRevoked: '已撤销', stMaxed: '已满额',
+    revoke: '撤销', noShares: '还没有分享链接，去「文件」页创建一个',
+    confirmCleanupT: '清理失效分享', confirmCleanupD: '将删除所有已过期、已撤销、已达下载上限的分享链接。',
+    cleanedN: '已清理 {n} 条失效分享', shareRevoked: '分享已撤销',
+    // 直链弹窗     // 直链弹窗 shareRevoked: '分享已撤销', 列表 列表
+    directCreated: '直链已创建 ✨', directCreatedSub: '复制下面的链接直接下载',
+    directUrlLabel: '直链（/d/xxx）',
+    directModalNotes: '备注（可选）', directModalNotesPh: '给直链起个备注名方便区分',
+    directLinksTitle: '直链', cleanupDirects: '清理失效直链',
+    stDirectActive: '有效', stDirectExpired: '已过期', stDirectRevoked: '已撤销', stDirectMaxed: '已满额',
+    revokeDirect: '撤销', noDirectLinks: '还没有直链，去「文件」页创建一个',
+    confirmCleanupDirectT: '清理失效直链', confirmCleanupDirectD: '将删除所有已过期、已撤销、已达下载上限的直链。',
+    cleanedDirectN: '已清理 {n} 条失效直链', directRevoked: '直链已撤销',
+    confirmRevokeDirectT: '撤销直链', confirmRevokeDirectD: '撤销后该链接将立即失效，无法恢复。',
+    confirmRevokeT: '撤销分享', confirmRevokeD: '撤销后该链接将立即失效，无法恢复。',
+    // 记录
+    logsTitle: '下载记录', totalN: '共 {n} 条', searchPlaceholder: '搜索 IP / 文件名…',
+    clear30: '清理 30 天前', clearAll: '清空全部', prev: '‹ 上一页', next: '下一页 ›', pageOf: '第 {a} / {b} 页',
+    noMatch: '没有匹配的记录', noLogs: '还没有下载记录',
+    confirmClear30T: '清理记录', confirmClear30D: '删除 30 天前的所有下载记录，以减少存储占用。',
+    confirmClearAllT: '清空全部记录',
+    confirmClearAllD: '将删除所有下载记录（流量统计与分享下载计数不受影响）。此操作不可恢复。',
+    clearedN: '已清理 {n} 条记录',
+    // 封禁
+    manualBan: '手动封禁 IP', ipPlaceholder: 'IP 地址，如 1.2.3.4', reasonPlaceholder: '原因（可选）', ban: '封禁',
+    banTip: '重复下载超限的 IP 会被系统自动封禁（可在「设置」调整参数），此处可手动补充封禁。',
+    banList: '封禁名单', unban: '解封', noBans: '当前没有封禁任何 IP',
+    bannedIp: '已封禁 {ip}', unbannedIp: '已解封 {ip}', enterIp: '请输入 IP 地址',
+    // 设置
+    siteName: '站点名称', siteNameD: '显示在分享页和后台标题',
+    trafficLimit: '月度流量限额（GB）',
+    trafficLimitD: '本月已用 {used}。流量达到限额后，所有下载自动暂停，防止流量超额产生费用。设为 0 表示不限制，每月自动重置。',
+    resetTraffic: '重置本月流量', resetTrafficD: '将已用流量清零，立即恢复下载服务', reset: '重置',
+    perIp: '单 IP 最大下载次数',
+    perIpD: '同一 IP 在统计窗口内对同一资源最多可下载的次数，超出后拦截。设为 0 表示不限制。',
+    window: '统计窗口（小时）', windowD: '统计单 IP 重复下载的时间范围。设为 0 表示永久累计。',
+    autoBan: '超限自动封禁', autoBanD: '开启后，重复下载超限的 IP 会被自动加入封禁名单',
+    banHours: '封禁时长（小时）', banHoursD: '自动封禁的持续时间，到期自动解封。设为 0 表示永久封禁直至手动解封。',
+    clearLogs: '清除下载记录', clearLogsD: '删除下载明细以减少 D1 存储占用（流量统计与分享下载计数不受影响）',
+    trafficResetOk: '本月流量已重置', confirmResetT: '重置流量',
+    confirmResetD: '将本月已用流量清零并立即恢复下载服务？',
+    // 文件删除
+    deleteFileT: '删除文件', deleteFileD: '确定删除「{name}」？其所有分享链接和下载记录也会一并删除。',
+    fileDeleted: '文件已删除',
+    loadingErr: '加载失败',
+    // 分享密码显示
+    showPassword: '显示', hidePassword: '隐藏', copyPassword: '复制密码',
+    passwordCol: '密码', noPassword: '无',
+    // 登录安全
+    secTitle: '登录安全审计',
+    secSubtitle: '记录每次登录成功/失败/登出操作，防止盗号',
+    secBadgeFail24h: '最近 24h 失败 {n} 次',
+    secBadgeSafe: '🔒 登录状态良好',
+    actionLogin: '登录', actionLogout: '登出',
+    actionFail: '登录失败', actionRateLimited: '触发限流',
+    resultSuccess: '成功', resultFail: '失败',
+    colAction: '操作', colResult: '结果', colReason: '原因', colLoginTime: '时间',
+    secReasonInvalid: '密钥错误', secReasonRateLimited: '尝试过于频繁', secReasonSession: '会话失效',
+    secClear30: '清理 30 天前', secClearAll: '清空全部',
+    secConfirmClear30T: '清理登录日志', secConfirmClear30D: '删除 30 天前的所有登录日志。',
+    secConfirmClearAllT: '清空全部登录日志', secConfirmClearAllD: '将删除所有登录日志，此操作不可恢复。',
+    secClearedN: '已清理 {n} 条记录',
+    secNoLogs: '还没有登录记录', secSearchPh: '搜索 IP / 浏览器 / 系统…',
+    secFilterAll: '全部结果', secFilterSuccess: '仅成功', secFilterFail: '仅失败',
+    secActionAll: '全部操作',
+    // 2FA 登录
+    login2faTitle: '两步验证',
+    login2faSub: '请输入 Authenticator 应用中的 6 位验证码',
+    login2faPh: '6 位验证码',
+    login2faCode: '验证码',
+    login2faUseRecovery: '使用恢复码',
+    login2faBack: '← 返回',
+    login2faRecoveryPh: '16 位恢复码（空格可选）',
+    login2faRecoveryHint: '如果 Authenticator 丢失，可以输入恢复码登录并自动关闭 2FA',
+    login2faRecoveryOk: '恢复码验证成功，2FA 已自动重置',
+    // 管理员 IP 白名单
+    ipWhitelist: '管理员 IP 白名单',
+    ipWhitelistD: '限制哪些 IP 可以访问 /admin 后台。留空 = 不限制；配置后，只有白名单 IP 能登录，且这些 IP 的下载不受流量限额约束。',
+    ipWhitelistPh: '每行一个，或用逗号分隔。支持精确 IP（1.2.3.4）和 CIDR（10.0.0.0/8）',
+    ipWhitelistOn: '已启用',
+    ipWhitelistOff: '未启用（任何 IP 都能访问 /admin）',
+    ipWhitelistHint: '格式：每行一个条目 或 用逗号分隔。例：192.168.1.1, 10.0.0.0/8, 203.0.113.0/24',
+    // 下载市场首页
+    homeRedirectMarket: '下载市场作为首页',
+    homeRedirectMarketD: '访客直接访问域名根路径 / 时，自动跳转到下载市场页面（/market）而不是管理后台（/admin）',
+    homeRedirectMarketHint: '默认关闭。开启后，您的站点首页就是下载市场，普通访客无法直接看到 /admin。管理员仍然可以通过 /admin 显式访问后台。',
+    codesFloatingBtn: '🎟️ 激活码浮动按钮',
+    codesFloatingBtnD: '在分享页右上角（或左上角）显示一个卡片图标，用户点击后可绑定激活码、查询额度、解绑',
+    codesFloatingBtnHint: '默认开启。关闭后用户只能通过 URL 参数 ?code=XXX 携带激活码（不推荐）',
+    codesFloatingBtnPosition: '按钮位置',
+    codesFloatingBtnPosRight: '右上角',
+    codesFloatingBtnPosLeft: '左上角',
+
+    // 2FA 设置
+    twofa: '两步验证 (TOTP)',
+    twofaD: '使用 Google Authenticator / Microsoft Authenticator 等应用生成验证码',
+    twofaSetupT: '开启两步验证',
+    twofaSetupD1: '用 Authenticator 扫描下方二维码，或手动输入密钥',
+    twofaSetupKey: '手动输入密钥',
+    twofaSetupCodePh: '输入 6 位验证码',
+    twofaSetupCode: '验证码',
+    twofaSetupDone: '2FA 已开启 ✅',
+    twofaSetupRecoveryT: '请立即保存以下恢复码',
+    twofaSetupRecoveryD: '恢复码可在 Authenticator 丢失时恢复登录。仅本次显示，请复制保存到安全位置。Cloudflare 后台也可以配置超级恢复码作为备份。',
+    twofaSetupRecoveryAll: '全部保存',
+    twofaSetupRecoveryCopied: '恢复码已复制',
+    twofaDisableT: '关闭两步验证',
+    twofaDisableD: '关闭后登录只需管理员密钥，不再需要 2FA 码。请确认你了解风险。',
+    twofaRegenT: '重新生成恢复码',
+    twofaRegenD: '旧的恢复码将全部失效，生成 8 个新的恢复码。',
+    twofaAdminKeyPh: '请输入管理员密钥确认',
+    twofaNoCloudflareRecovery: '未配置 Cloudflare 超级恢复码（可选）',
+    twofaHasCloudflareRecovery: '已配置 Cloudflare 超级恢复码 ✅',
+    twofaRecoveryRemaining: '剩余恢复码 {n} 个',
+    twofaStatusOn: '已开启',
+    twofaStatusOff: '未开启',
+    // Turnstile
+    tsGroupTitle: '🛡️ Cloudflare Turnstile 人机验证',
+    tsGroupD: '防止机器人爬虫滥用分享链接。可按触发时机选择开启，并按每日访问阈值决定对某 IP 是否弹出。',
+    tsMode: '触发时机',
+    tsModeOff: '关闭',
+    tsModeShare: '打开分享链接时',
+    tsModeDownload: '点击下载时',
+    tsModeBoth: '两者都可以（双重保险）',
+    tsThreshold: '每 IP 每日触发阈值（次）',
+    tsThresholdHelp: '0 = 每次都弹；N = 该 IP 当天访问分享页超过 N 次后开始弹',
+    tsSitekeyOverride: 'SiteKey 覆盖（可选）',
+    tsSitekeyOverrideHelp: '如果你没在 Cloudflare Secret 里配 turnstile_sitekey，可在此填入',
+    tsSecretOverride: 'Turnstile Secret',
+    tsSecretPlaceholder: '填入 Secret Key（与 SiteKey 同一面板获取）',
+    tsSecretKeep: '留空不改动',
+    tsSecretInCloudflare: '已在 Cloudflare Secret 中（优先使用）',
+    tsSecretInDatabase: '已在数据库中加密存储',
+    tsInCloudflare: '已在 Cloudflare Secret 中',
+    tsInDatabase: '已在数据库中配置',
+    tsMissingBoth: 'Cloudflare Secret 和数据库都未配置，需要填写',
+    tsSecretHint: '可以填在这里（加密存入数据库），也可以在 Cloudflare Secret 里配 turnstile_secret（优先）',
+    tsSecretOk: '已配置 ✅',
+    tsSecretMissing: '未配置 ❌',
+    tsSitekeyCloudflareOk: 'SiteKey 已在 Cloudflare Secret 配置 ✅',
+    tsSitekeyCloudflareMissing: '未在 Cloudflare Secret 配置 turnstile_sitekey',
+    tsResetVisits: '重置今日访问计数',
+    tsResetVisitsD: '清空所有 IP 今日访问计数，让它们重新从头开始计数。',
+    tsVisitsReset: '访问计数已重置',
+    // OAuth2
+    oauthGroupTitle: '🔐 OAuth2 下载登录',
+    oauthGroupD: '管理员启用后，访客必须通过第三方账号登录才能下载。所有配置（client_id / secret）均在 D1 数据库中加密存储，不会进 Cloudflare Secret。',
+    oauthEnable: '启用 OAuth2',
+    oauthProvider: 'OAuth2 服务商',
+    oauthClientId: 'Client ID',
+    oauthClientSecret: 'Client Secret',
+    oauthClientSecretHelp: '在服务商后台申请，会用 admin 密钥加密存入数据库',
+    oauthSecretConfigured: '已配置',
+    oauthSecretNotConfigured: '未配置',
+    oauthSecretClear: '清除 Secret',
+    oauthScope: 'Scope（授权范围）',
+    oauthCustomUrls: '自定义 Provider URL（只有选了 Custom 才生效）',
+    oauthCustomAuthorize: '授权端点 (Authorization URL)',
+    oauthCustomToken: '令牌端点 (Token URL)',
+    oauthCustomUserinfo: '用户信息端点 (Userinfo URL)',
+    oauthCustomTokenField: 'Token 返回字段名',
+    oauthCallbackUrl: '回调地址（复制到服务商后台）',
+    oauthCallbackHint: '在服务商 OAuth2 设置中，把此 URL 填入 Redirect URI / Callback URL 字段',
+    oauthTest: '测试配置',
+    oauthTestOk: 'OAuth2 配置有效',
+    oauthTestFail: 'OAuth2 配置不完整或有错误',
+    // 新增多 Provider 相关
+    configureTurnstile: '配置 Turnstile',
+    oauthNoProviders: '还没有配置任何 OAuth2 Provider',
+    oauthEnabledN: '已启用 {n} 个 Provider',
+    oauthNoEnabled: '总开关已打开，但没有启用任何 Provider',
+    oauthDisabled: '未启用',
+    oauthConfigure: '⚙️ 配置',
+    oauthEnable: '启用',
+    oauthDisable: '禁用',
+    oauthAddProvider: '添加 Provider',
+    oauthEditTitle: '编辑 OAuth2 Provider',
+    oauthAddTitle: '添加 OAuth2 Provider',
+    oauthLabel: '显示名称',
+    oauthKeepSecret: '保持现有 Secret 不变',
+    // 存储后端（出站）
+    storageBackendTitle: '💾 存储后端',
+    storageBackendD: '默认使用 Cloudflare R2（零配置）；也可挂载外部 S3 兼容存储或任何支持 WebDAV 的网盘（坚果云 / 阿里云盘 / OneDrive / Nextcloud 等）',
+    storageBackendR2: 'Cloudflare R2（默认）',
+    storageBackendS3: 'S3 兼容存储',
+    storageBackendWebDAV: '远程 WebDAV 网盘',
+    storageBackendNotSet: '未配置',
+    storageBackendUrl: '服务器地址',
+    storageBackendUser: '用户名',
+    storageBackendPwd: '密码',
+    storageBackendPwdKeep: '留空保持不变',
+    storageBackendConfig: '配置',
+    storageBackendTest: '测试连接',
+    storageBackendConnected: '连接成功',
+    storageBackendConnectFail: '连接失败',
+    // WebDAV
+    webdavGroupTitle: '🗂️ WebDAV 文件共享',
+    webdavGroupD: '开启后可通过 WebDAV 客户端（Finder / Explorer / nPlayer 等）以读写方式管理文件，也能直接在浏览器地址栏挂载',
+    webdavEnable: '启用 WebDAV 服务',
+    webdavUsername: '用户名',
+    webdavPassword: '密码',
+    webdavPasswordPh: '留空不改动',
+    webdavPasswordSet: '已设置',
+    webdavPasswordUnset: '未设置',
+    webdavPasswordClear: '清除密码',
+    webdavRootPath: '可访问根路径',
+    webdavRootPathHelp: '默认 "/" = 全部文件；可设 "/shared" 等限制范围',
+    webdavUrl: 'WebDAV 地址',
+    webdavUrlHint: '在 WebDAV 客户端里用这个地址挂载',
+    // 数据库工具
+    dbToolsTitle: '🧰 数据库健康',
+    dbToolsD: '自动检测表、列、索引和迁移版本是否完整。旧版本升级后如果新功能缺失，点"修复"让数据库同步到最新 schema。',
+    dbHealthy: '✓ 数据库结构完整',
+    dbNeedRepair: '⚠ 检测到 schema 异常',
+    dbTables: '表结构',
+    dbColumns: '缺失的列',
+    dbIndexes: '缺失的索引',
+    dbMigration: '迁移进度',
+    dbTablesOk: '{a} / {b} 表就绪',
+    dbMissingCount: '缺 {n} 项',
+    dbRepairBtn: '🔧 修复数据库',
+    dbRepairConfirmT: '修复数据库 schema？',
+    dbRepairConfirmD: '将自动创建缺失的表、补上缺失的列和索引、重跑未执行的迁移。此操作不会删除任何现有数据。',
+    dbRepairing: '正在修复数据库…',
+    dbRepairOk: '数据库修复完成 ✅',
+    dbRepairFail: '数据库修复失败',
+    dbRepairDetailTables: '创建表',
+    dbRepairDetailCols: '补列',
+    dbRepairDetailIdx: '索引',
+    dbRepairDetailMigrations: '迁移',
+    dbRepairDetailTime: '耗时',
+    dbStatusRefresh: '刷新状态',
+    dbStatusMissingTables: '缺失的表',
+    dbStatusMissingCols: '缺失的列',
+    dbStatusMissingIdx: '缺失的索引',
+    dbTableRows: '表行数',
+    // UI 主题
+    uiThemeTitle: '🎨 界面主题',
+    uiThemeD: '白色 Apple 风格（默认）更清爽；暗色经典风格适合夜间使用。',
+    uiThemeLight: '☀️ 浅色',
+    uiThemeDark: '🌙 深色',
+    confirmDeleteTitle: '确认删除',
+    confirmOAuthDeleteD: '删除后此 Provider 的配置将永久删除。已生成的 OAuth2 会话不受影响，但新登录请求将无法使用此 Provider。确定删除吗？',
+    custom: '自定义',
+    cancel: '取消',
+    // 全球分布
+    globalTitle: '🌍 全球下载分布',
+    globalSub: '地球仪上蓝色越深代表下载量越大，鼠标悬停显示国家和具体数量。',
+    globalDays: '统计天数',
+    globalTotalDownloads: '总下载',
+    globalTotalBytes: '总流量',
+    globalCountries: '覆盖国家',
+    globalEmpty: '选定时段内暂无下载记录',
+    globalCountry: '国家/地区',
+    globalDownloads: '下载次数',
+    globalBytes: '流量',
+    globalUniqueIps: '独立 IP',
+    globalUniqueFiles: '文件数',
+    globalGeoSource: '数据来源：D1 下载日志（国家代码）',
+    globalAnalyticsHint: '启用 Cloudflare Analytics Engine 后可显示精确经纬度',
+    // 激活码
+    tabCodes: '激活码',
+    codesTitle: '🎟️ 激活码管理',
+    codesSub: '批量生成带独立流量额度的激活码，用户使用激活码下载不受全局流量限制。额度耗尽或过期自动停用。',
+    codesUsageTitle: '用量概览',
+    codesGenerateTitle: '批量生成激活码',
+    codesBatchId: '批次标识（自动生成）',
+    codesPlanName: '分类/套餐名（可选）',
+    codesCount: '生成数量',
+    codesTraffic: '总流量额度 (GB，0=纯时效码)',
+    codesDays: '有效天数 (0=不限)',
+    codesQuotaMsg: '耗尽时自定义提示（可选）',
+    codesNotes: '备注（可选）',
+    codesGenerate: '生成激活码',
+    codesGeneratedN: '成功生成 {n} 个激活码',
+    codesGeneratedPreview: '前 50 个激活码（其余请用 CSV 导出完整列表）',
+    codesExportCsv: '导出 CSV',
+    codesListTitle: '激活码列表',
+    codesFilterStatus: '状态',
+    codesFilterBatch: '批次',
+    codesFilterPlan: '分类',
+    codesFilterQ: '搜索码/备注',
+    codesFilterAll: '全部',
+    codesColCode: '激活码',
+    codesColPlan: '分类',
+    codesColBatch: '批次',
+    codesColTraffic: '流量额度',
+    codesColUsed: '已用',
+    codesColDays: '有效天数',
+    codesColStatus: '状态',
+    codesColCreated: '创建时间',
+    codesColActivated: '首次使用',
+    codesColExpires: '过期时间',
+    codesRevokeOne: '作废',
+    codesRevokeBatch: '按批次作废',
+    codesRevokeCodes: '按码作废',
+    codesConfirmRevokeT: '确认作废',
+    codesConfirmRevokeD: '作废后该激活码将无法继续使用，已使用的流量记录保留。',
+    codesBatchRevokeOk: '已作废 {n} 个激活码',
+    codesStatusUnused: '未使用',
+    codesStatusActive: '使用中',
+    codesStatusExpired: '已过期',
+    codesStatusExhausted: '已耗尽',
+    codesStatusRevoked: '已作废',
+    codesRemainingInfinite: '无限',
+    codesUnlimited: '不限',
+    codesNoCodes: '暂无激活码',
+    codesQueryRemain: '查询剩余流量',
+    codesQueryRemainPh: '输入激活码查询剩余额度',
+    codesQueryRemainBtn: '查询',
+    codesQueryNotFound: '激活码不存在',
+    codesQueryResult: '剩余 {remaining} / 总 {total}',
+    codesQueryResultInfinite: '剩余 ∞ (无限额度)',
+    codesPerBatch: '批次 {id}',
+  },
+  en: {
+    docTitle: '{site} · Admin Console',
+    // 通用
+    login: 'Log in', logout: 'Log out', cancel: 'Cancel', confirm: 'Confirm', copy: 'Copy', close: 'Close',
+    copied: 'Copied to clipboard', save: 'Save Settings', saved: 'Settings saved', forever: 'Forever',
+    switchTo: '中文', topbarSub: 'Admin console · Cloudflare Workers + R2',
+    // 登录
+    loginSubtitle: 'Admin console · Enter your admin key to continue', keyPlaceholder: 'Admin key (admin)',
+    // 标签
+    tabOverview: 'Overview', tabFiles: 'Files', tabStorage: 'Storage', tabShares: 'Shares', tabDirect: 'Direct', tabLogs: 'Logs', tabBans: 'Bans', tabGlobal: 'Global', tabSecurity: 'Security', tabSettings: 'Settings', tabWebDAV: 'WebDAV',
+    navContent: 'Content', navAnalytics: 'Analytics', navSecurity: 'Security', navSystem: 'System',
+    // 概览
+    statTraffic: 'Monthly Traffic', usedPercent: '{n}% used · resets monthly', noLimit: 'No limit set',
+    statDownloads: 'Total Downloads', todayN: '{n} today', statFiles: 'Files', storedR2: 'Stored in R2 object storage',
+    statShares: 'Share Links', sharesFoot: '{a} active · {b} banned IPs',
+    chartTitle: 'Downloads · Last 14 Days', recentTitle: 'Recent Downloads', viewAll: 'View all', noLogsYet: 'No downloads yet',
+    quotaBannerT: 'Traffic quota reached — downloads auto-paused',
+    quotaBannerD: 'All public download requests are blocked. Raise the limit in Settings or reset this month\'s traffic.',
+    times: '', unlimitedShort: 'Unlimited',
+    // 表格列
+    colFile: 'File', colIP: 'IP', colBrowser: 'Browser', colOS: 'OS', colTraffic: 'Traffic', colTime: 'Time',
+    colCountry: 'Country', colName: 'Name', colSize: 'Size', colShareCount: 'Shares', colDownloads: 'Downloads',
+    colUploaded: 'Uploaded', colActions: 'Actions', colLink: 'Link', colCreated: 'Created',
+    colExpires: 'Expires', colStatus: 'Status', colReason: 'Reason', colBannedAt: 'Banned at', colUntil: 'Until',
+    // 文件
+    dropTitle: 'Drop files here or click to upload',
+    dropDesc: 'Max 100 MB per file (Workers limit) · Stored directly in R2',
+    allFiles: 'All Files', noFiles: 'No files yet — upload one to get started', createShare: 'Share', createDirect: 'Direct', del: 'Delete',
+    tooLarge: '"{name}" exceeds the 100 MB limit', uploadOk: '"{name}" uploaded', uploadFail: '"{name}" upload failed',
+    uploadDone: 'Done ✅', uploadFailShort: 'Failed',
+    // 分享弹窗
+    shareModalTitle: 'Create Share Link', shareModalSub: 'Generate a public download link with optional expiry and download cap',
+    validity: 'Validity', perm: 'Forever', h1: '1 hour', d1: '1 day', d7: '7 days', d30: '30 days',
+    sharePassword: 'Access password (optional)', sharePasswordPh: 'Leave blank for no password',
+    sharePasswordHint: 'When set, visitors must enter a password to download.',
+    downloadName: 'Display name on download (optional)', downloadNamePh: 'Leave blank to use original filename',
+    downloadNameHint: 'The filename visitors see when they download. Useful for hiding sensitive info in original paths.',
+    maxDownloadsLabel: 'Max downloads (empty or 0 = unlimited)', unlimitedPlaceholder: 'Unlimited',
+    maxTip: 'The link expires when the cap is reached. Per-IP duplicate limits are controlled in Settings.',
+    generate: 'Generate Link', shareCreated: 'Share link created ✨', shareCreatedSub: 'Copy the link below and share it',
+    sharePageLink: 'Share page (visitors see password/verification first)',
+    directModalTitle: 'Create Direct Link', directModalSub: 'Generate a bare link — no page, no password, just download',
+    preview: 'Preview',
+    // 分享列表
+    sharesTitle: 'Share Links', cleanup: 'Clean up expired',
+    stActive: 'Active', stExpired: 'Expired', stRevoked: 'Revoked', stMaxed: 'Maxed out',
+    revoke: 'Revoke', noShares: 'No share links yet — create one in Files',
+    confirmCleanupT: 'Clean up expired shares', confirmCleanupD: 'This will delete all expired, revoked and maxed-out share links.',
+    cleanedN: 'Cleaned up {n} expired shares', shareRevoked: 'Share revoked',
+    // Direct links
+    directCreated: 'Direct link created ✨', directCreatedSub: 'Copy the link below and share it',
+    directUrlLabel: 'Direct link (/d/xxx)',
+    directModalNotes: 'Notes (optional)', directModalNotesPh: 'Label this direct link',
+    directLinksTitle: 'Direct Links', cleanupDirects: 'Clean up',
+    stDirectActive: 'Active', stDirectExpired: 'Expired', stDirectRevoked: 'Revoked', stDirectMaxed: 'Maxed',
+    revokeDirect: 'Revoke', noDirectLinks: 'No direct links yet — go to Files and create one',
+    confirmCleanupDirectT: 'Clean up expired direct links', confirmCleanupDirectD: 'Delete all expired, revoked and maxed-out direct links.',
+    cleanedDirectN: 'Cleaned {n} expired direct links', directRevoked: 'Direct link revoked',
+    confirmRevokeDirectT: 'Revoke direct link', confirmRevokeDirectD: 'This direct link will be permanently disabled.',
+    confirmRevokeT: 'Revoke share', confirmRevokeD: 'The link will stop working immediately. This cannot be undone.',
+    // 记录
+    logsTitle: 'Download Logs', totalN: '{n} total', searchPlaceholder: 'Search IP / file name…',
+    clear30: 'Clear 30d+', clearAll: 'Clear all', prev: '‹ Prev', next: 'Next ›', pageOf: 'Page {a} of {b}',
+    noMatch: 'No matching records', noLogs: 'No download logs yet',
+    confirmClear30T: 'Clear logs', confirmClear30D: 'Delete download logs older than 30 days to save storage.',
+    confirmClearAllT: 'Clear all logs',
+    confirmClearAllD: 'All download logs will be deleted (traffic stats and share counters are unaffected). This cannot be undone.',
+    clearedN: 'Cleared {n} logs',
+    // 封禁
+    manualBan: 'Ban an IP manually', ipPlaceholder: 'IP address, e.g. 1.2.3.4', reasonPlaceholder: 'Reason (optional)', ban: 'Ban',
+    banTip: 'IPs exceeding duplicate-download limits are banned automatically (configurable in Settings). You can also ban manually here.',
+    banList: 'Banned IPs', unban: 'Unban', noBans: 'No IPs are currently banned',
+    bannedIp: 'Banned {ip}', unbannedIp: 'Unbanned {ip}', enterIp: 'Please enter an IP address',
+    // 设置
+    siteName: 'Site Name', siteNameD: 'Shown on the share page and console title',
+    trafficLimit: 'Monthly Traffic Quota (GB)',
+    trafficLimitD: '{used} used this month. Downloads auto-pause when the quota is reached to avoid overage charges. Set 0 for unlimited; resets monthly.',
+    resetTraffic: 'Reset Monthly Traffic', resetTrafficD: 'Zero out used traffic and resume downloads immediately', reset: 'Reset',
+    perIp: 'Max Downloads per IP',
+    perIpD: 'How many times the same IP may download the same resource within the counting window. 0 = unlimited.',
+    window: 'Counting Window (hours)', windowD: 'Time range for counting duplicate downloads per IP. 0 = forever.',
+    autoBan: 'Auto-ban on limit', autoBanD: 'Automatically ban IPs that exceed the duplicate-download limit',
+    banHours: 'Ban Duration (hours)', banHoursD: 'How long auto-bans last. 0 = permanent until manually lifted.',
+    clearLogs: 'Clear Download Logs', clearLogsD: 'Delete log details to save D1 storage (traffic stats and counters unaffected)',
+    trafficResetOk: 'Monthly traffic has been reset', confirmResetT: 'Reset traffic',
+    confirmResetD: 'Zero out this month\'s traffic and resume downloads?',
+    // 文件删除
+    deleteFileT: 'Delete file', deleteFileD: 'Delete "{name}"? All its share links and logs will also be deleted.',
+    fileDeleted: 'File deleted',
+    loadingErr: 'Failed to load',
+    // 分享密码显示
+    showPassword: 'Show', hidePassword: 'Hide', copyPassword: 'Copy password',
+    passwordCol: 'Password', noPassword: 'None',
+    // 登录安全
+    secTitle: 'Login Security',
+    secSubtitle: 'Every login/logout/failure is recorded here to detect unauthorized access',
+    secBadgeFail24h: '{n} failed in last 24h',
+    secBadgeSafe: '🔒 All clear',
+    actionLogin: 'Login', actionLogout: 'Logout',
+    actionFail: 'Login failed', actionRateLimited: 'Rate limited',
+    resultSuccess: 'Success', resultFail: 'Failed',
+    colAction: 'Action', colResult: 'Result', colReason: 'Reason', colLoginTime: 'Time',
+    secReasonInvalid: 'Wrong key', secReasonRateLimited: 'Too many attempts', secReasonSession: 'Session expired',
+    secClear30: 'Clear 30d+', secClearAll: 'Clear all',
+    secConfirmClear30T: 'Clear login logs', secConfirmClear30D: 'Delete login logs older than 30 days.',
+    secConfirmClearAllT: 'Clear all login logs', secConfirmClearAllD: 'All login logs will be deleted. This cannot be undone.',
+    secClearedN: 'Cleared {n} logs',
+    secNoLogs: 'No login logs yet', secSearchPh: 'Search IP / browser / OS…',
+    secFilterAll: 'All', secFilterSuccess: 'Success only', secFilterFail: 'Fail only',
+    secActionAll: 'All actions',
+    // 2FA login
+    login2faTitle: 'Two-Factor Authentication',
+    login2faSub: 'Enter the 6-digit code from your Authenticator app',
+    login2faPh: '6-digit code',
+    login2faCode: 'Code',
+    login2faUseRecovery: 'Use recovery code',
+    login2faBack: '← Back',
+    login2faRecoveryPh: '16-char recovery code (spaces optional)',
+    login2faRecoveryHint: 'If your Authenticator is lost, enter a recovery code to log in and disable 2FA automatically.',
+    login2faRecoveryOk: 'Recovery code accepted. 2FA has been reset.',
+    // Admin IP whitelist
+    ipWhitelist: 'Admin IP Whitelist',
+    ipWhitelistD: 'Restricts which IPs can access /admin. Empty = no restriction. When set, only whitelisted IPs can log in, and their downloads are exempt from traffic quota.',
+    ipWhitelistPh: 'One per line, or comma-separated. Supports exact IP (1.2.3.4) and CIDR (10.0.0.0/8)',
+    ipWhitelistOn: 'Enabled',
+    ipWhitelistOff: 'Not enabled (any IP can access /admin)',
+    ipWhitelistHint: 'Format: one per line OR comma-separated. e.g. 192.168.1.1, 10.0.0.0/8, 203.0.113.0/24',
+    // Marketplace as home
+    homeRedirectMarket: 'Marketplace as Homepage',
+    homeRedirectMarketD: 'When visitors land on your root domain /, redirect them to the marketplace (/market) instead of the admin panel (/admin)',
+    homeRedirectMarketHint: 'Off by default. When enabled, your site homepage becomes the marketplace. Admins can still reach /admin explicitly.',
+    codesFloatingBtn: '🎟️ Activation Code Floating Button',
+    codesFloatingBtnD: 'Show a card icon on the share page corner. Users can bind/unbind their code and check balance by clicking it.',
+    codesFloatingBtnHint: 'On by default. When off, users can only use activation codes via the URL parameter ?code=XXX (not recommended).',
+    codesFloatingBtnPosition: 'Position',
+    codesFloatingBtnPosRight: 'Top right',
+    codesFloatingBtnPosLeft: 'Top left',
+
+    // 2FA settings
+    twofa: 'Two-Factor Authentication (TOTP)',
+    twofaD: 'Use Google Authenticator / Microsoft Authenticator to generate one-time codes',
+    twofaSetupT: 'Enable Two-Factor Auth',
+    twofaSetupD1: 'Scan the QR code with your Authenticator app, or enter the key manually',
+    twofaSetupKey: 'Manual entry key',
+    twofaSetupCodePh: 'Enter 6-digit code',
+    twofaSetupCode: 'Code',
+    twofaSetupDone: '2FA enabled ✅',
+    twofaSetupRecoveryT: 'Save these recovery codes now',
+    twofaSetupRecoveryD: 'Recovery codes can restore access if your Authenticator is lost. They are shown only once here — copy them to a safe place. You can also configure a Cloudflare fallback code as a backup.',
+    twofaSetupRecoveryAll: 'Copy all',
+    twofaSetupRecoveryCopied: 'Recovery codes copied',
+    twofaDisableT: 'Disable Two-Factor Auth',
+    twofaDisableD: 'After disabling, login only requires your admin key. Make sure you understand the security implications.',
+    twofaRegenT: 'Regenerate recovery codes',
+    twofaRegenD: 'All existing recovery codes will be invalidated. 8 new ones will be generated.',
+    twofaAdminKeyPh: 'Re-enter admin key to confirm',
+    twofaNoCloudflareRecovery: 'No Cloudflare fallback code configured (optional)',
+    twofaHasCloudflareRecovery: 'Cloudflare fallback code configured ✅',
+    twofaRecoveryRemaining: '{n} recovery codes remaining',
+    twofaStatusOn: 'Enabled',
+    twofaStatusOff: 'Disabled',
+    // Turnstile
+    tsGroupTitle: '🛡️ Cloudflare Turnstile',
+    tsGroupD: 'Block bots from abusing your share links. Choose when to trigger and set a daily per-IP threshold to decide who gets challenged.',
+    tsMode: 'Trigger',
+    tsModeOff: 'Off',
+    tsModeShare: 'On share page load',
+    tsModeDownload: 'On download click',
+    tsModeBoth: 'Both (double guard)',
+    tsThreshold: 'Daily per-IP threshold',
+    tsThresholdHelp: '0 = always show; N = show after this IP visits N times today',
+    tsSitekeyOverride: 'SiteKey override (optional)',
+    tsSitekeyOverrideHelp: 'Only needed if you did NOT set turnstile_sitekey as a Cloudflare Secret',
+    tsSecretOverride: 'Turnstile Secret',
+    tsSecretPlaceholder: 'Enter Secret Key (same dashboard as SiteKey)',
+    tsSecretKeep: 'Leave blank to keep unchanged',
+    tsSecretInCloudflare: 'Set in Cloudflare Secret (takes priority)',
+    tsSecretInDatabase: 'Stored encrypted in the database',
+    tsInCloudflare: 'set in Cloudflare Secret',
+    tsInDatabase: 'set in database',
+    tsMissingBoth: 'Missing in both Cloudflare Secret and database — please enter below',
+    tsSecretHint: 'Can be entered here (encrypted) or set as Cloudflare Secret turnstile_secret (takes priority)',
+    tsSecretOk: 'Configured ✅',
+    tsSecretMissing: 'Not configured ❌',
+    tsSitekeyCloudflareOk: 'SiteKey set in Cloudflare Secret ✅',
+    tsSitekeyCloudflareMissing: 'turnstile_sitekey not set in Cloudflare Secret',
+    tsResetVisits: 'Reset visit counters',
+    tsResetVisitsD: 'Clear today\'s per-IP visit counts so everyone starts fresh.',
+    tsVisitsReset: 'Visit counters cleared',
+    // OAuth2
+    oauthGroupTitle: '🔐 OAuth2 Login Required for Downloads',
+    oauthGroupD: 'When enabled, visitors must log in through a third-party OAuth2 provider before downloading. Client credentials are encrypted in the D1 database — no Cloudflare Secret needed.',
+    oauthEnable: 'Enable OAuth2',
+    oauthProvider: 'OAuth2 Provider',
+    oauthClientId: 'Client ID',
+    oauthClientSecret: 'Client Secret',
+    oauthClientSecretHelp: 'Issued by the provider dashboard; stored encrypted using the admin key',
+    oauthSecretConfigured: 'Configured',
+    oauthSecretNotConfigured: 'Not configured',
+    oauthSecretClear: 'Clear Secret',
+    oauthScope: 'Scope',
+    oauthCustomUrls: 'Custom Provider URLs (only when Custom is selected)',
+    oauthCustomAuthorize: 'Authorization URL',
+    oauthCustomToken: 'Token URL',
+    oauthCustomUserinfo: 'Userinfo URL',
+    oauthCustomTokenField: 'Token Field Name',
+    oauthCallbackUrl: 'Callback URL (copy to provider dashboard)',
+    oauthCallbackHint: 'Paste this URL into the Redirect URI / Callback URL field in your OAuth2 provider settings.',
+    oauthTest: 'Test Configuration',
+    oauthTestOk: 'OAuth2 configuration looks valid',
+    oauthTestFail: 'OAuth2 is incomplete or has errors',
+    configureTurnstile: 'Configure Turnstile',
+    oauthNoProviders: 'No OAuth2 providers configured yet',
+    oauthEnabledN: '{n} provider(s) enabled',
+    oauthNoEnabled: 'Master switch is ON but no provider is enabled',
+    oauthDisabled: 'Disabled',
+    oauthConfigure: '⚙️ Configure',
+    oauthEnable: 'Enable',
+    oauthDisable: 'Disable',
+    oauthAddProvider: 'Add Provider',
+    oauthEditTitle: 'Edit OAuth2 Provider',
+    oauthAddTitle: 'Add OAuth2 Provider',
+    oauthLabel: 'Display Name',
+    oauthKeepSecret: 'Keep existing secret unchanged',
+    // Storage backend (outbound)
+    storageBackendTitle: '💾 Storage Backend',
+    storageBackendD: 'Cloudflare R2 by default (zero config). Optionally mount an external S3-compatible store or any WebDAV cloud drive (Jianguoyun / Aliyun Drive / OneDrive / Nextcloud…)',
+    storageBackendR2: 'Cloudflare R2 (default)',
+    storageBackendS3: 'S3-compatible storage',
+    storageBackendWebDAV: 'Remote WebDAV cloud',
+    storageBackendNotSet: 'Not configured',
+    storageBackendUrl: 'Server URL',
+    storageBackendUser: 'Username',
+    storageBackendPwd: 'Password',
+    storageBackendPwdKeep: 'Leave blank to keep unchanged',
+    storageBackendConfig: 'Configure',
+    storageBackendTest: 'Test connection',
+    storageBackendConnected: 'Connected',
+    storageBackendConnectFail: 'Connection failed',
+    // WebDAV
+    webdavGroupTitle: '🗂️ WebDAV File Sharing',
+    webdavGroupD: 'Enable to mount your storage as a read-write drive from WebDAV clients (Finder / Explorer / nPlayer), or directly via the browser address bar.',
+    webdavEnable: 'Enable WebDAV',
+    webdavUsername: 'Username',
+    webdavPassword: 'Password',
+    webdavPasswordPh: 'Leave blank to keep unchanged',
+    webdavPasswordSet: 'Set',
+    webdavPasswordUnset: 'Not set',
+    webdavPasswordClear: 'Clear password',
+    webdavRootPath: 'Accessible root path',
+    webdavRootPathHelp: 'Default "/" = all files; set "/shared" to restrict scope',
+    webdavUrl: 'WebDAV URL',
+    webdavUrlHint: 'Use this URL in your WebDAV client to mount',
+    // Database tools
+    dbToolsTitle: '🧰 Database Health',
+    dbToolsD: 'Auto-check whether tables, columns, indexes and migrations are complete. After an upgrade from an older version, click "Repair" to sync the DB to the latest schema.',
+    dbHealthy: '✓ Schema is complete',
+    dbNeedRepair: '⚠ Schema issue detected',
+    dbTables: 'Tables',
+    dbColumns: 'Missing columns',
+    dbIndexes: 'Missing indexes',
+    dbMigration: 'Migration progress',
+    dbTablesOk: '{a} / {b} tables ready',
+    dbMissingCount: '{n} missing',
+    dbRepairBtn: '🔧 Repair Database',
+    dbRepairConfirmT: 'Repair database schema?',
+    dbRepairConfirmD: 'This will create missing tables, add missing columns/indexes and re-run pending migrations. No existing data will be deleted.',
+    dbRepairing: 'Repairing database…',
+    dbRepairOk: 'Database repair complete ✅',
+    dbRepairFail: 'Database repair failed',
+    dbRepairDetailTables: 'Tables created',
+    dbRepairDetailCols: 'Columns added',
+    dbRepairDetailIdx: 'Indexes',
+    dbRepairDetailMigrations: 'Migrations',
+    dbRepairDetailTime: 'Duration',
+    dbStatusRefresh: 'Refresh status',
+    dbStatusMissingTables: 'Missing tables',
+    dbStatusMissingCols: 'Missing columns',
+    dbStatusMissingIdx: 'Missing indexes',
+    dbTableRows: 'Row counts',
+    // UI theme
+    uiThemeTitle: '🎨 UI Theme',
+    uiThemeD: 'Light Apple style (default) for clarity; dark classic style for night use.',
+    uiThemeLight: '☀️ Light',
+    uiThemeDark: '🌙 Dark',
+    confirmDeleteTitle: 'Confirm Delete',
+    confirmOAuthDeleteD: 'This provider config will be permanently deleted. Existing OAuth sessions remain valid, but new login requests cannot use this provider. Are you sure?',
+    custom: 'Custom',
+    // Global Distribution
+    globalTitle: '🌍 Global Download Distribution',
+    globalSub: 'Blue countries have more downloads. Hover over a country for exact numbers.',
+    globalDays: 'Time Range (days)',
+    globalTotalDownloads: 'Total Downloads',
+    globalTotalBytes: 'Total Traffic',
+    globalCountries: 'Countries',
+    globalEmpty: 'No download records in the selected period',
+    globalCountry: 'Country/Region',
+    globalDownloads: 'Downloads',
+    globalBytes: 'Traffic',
+    globalUniqueIps: 'Unique IPs',
+    globalUniqueFiles: 'Files',
+    globalGeoSource: 'Data source: D1 download logs (country code)',
+    globalAnalyticsHint: 'Bind Cloudflare Analytics Engine for precise lat/lng data',
+    // Activation Codes
+    tabCodes: 'Codes',
+    codesTitle: '🎟️ Activation Codes',
+    codesSub: 'Generate activation codes with independent traffic quotas. Users using codes bypass the global traffic limit. Codes auto-stop when quota or time expires.',
+    codesUsageTitle: 'Usage Summary',
+    codesGenerateTitle: 'Batch Generate Codes',
+    codesBatchId: 'Batch ID (auto-generated)',
+    codesPlanName: 'Plan / Category (optional)',
+    codesCount: 'Count',
+    codesTraffic: 'Total traffic quota (GB, 0 = time-only)',
+    codesDays: 'Valid days (0 = unlimited)',
+    codesQuotaMsg: 'Custom exhaustion message (optional)',
+    codesNotes: 'Notes (optional)',
+    codesGenerate: 'Generate Codes',
+    codesGeneratedN: 'Generated {n} codes',
+    codesGeneratedPreview: 'First 50 codes (use CSV export for the full list)',
+    codesExportCsv: 'Export CSV',
+    codesListTitle: 'Codes List',
+    codesFilterStatus: 'Status',
+    codesFilterBatch: 'Batch',
+    codesFilterPlan: 'Plan',
+    codesFilterQ: 'Search code / notes',
+    codesFilterAll: 'All',
+    codesColCode: 'Code',
+    codesColPlan: 'Plan',
+    codesColBatch: 'Batch',
+    codesColTraffic: 'Quota',
+    codesColUsed: 'Used',
+    codesColDays: 'Days',
+    codesColStatus: 'Status',
+    codesColCreated: 'Created',
+    codesColActivated: 'First Used',
+    codesColExpires: 'Expires',
+    codesRevokeOne: 'Revoke',
+    codesRevokeBatch: 'Revoke by Batch',
+    codesRevokeCodes: 'Revoke by Codes',
+    codesConfirmRevokeT: 'Confirm Revoke',
+    codesConfirmRevokeD: 'After revocation, this code can no longer be used. Traffic history is preserved.',
+    codesBatchRevokeOk: '{n} codes revoked',
+    codesStatusUnused: 'Unused',
+    codesStatusActive: 'Active',
+    codesStatusExpired: 'Expired',
+    codesStatusExhausted: 'Exhausted',
+    codesStatusRevoked: 'Revoked',
+    codesRemainingInfinite: '∞',
+    codesUnlimited: '∞',
+    codesNoCodes: 'No activation codes yet',
+    codesQueryRemain: 'Check Remaining',
+    codesQueryRemainPh: 'Enter a code to check remaining quota',
+    codesQueryRemainBtn: 'Check',
+    codesQueryNotFound: 'Code not found',
+    codesQueryResult: 'Remaining {remaining} / Total {total}',
+    codesQueryResultInfinite: 'Remaining ∞ (unlimited)',
+    codesPerBatch: 'Batch {id}',
+  }
+};
+
+/** 语言检测：手动选择 > 浏览器首选语言 > 时区（大中华区） > 英文 */
+function detectLang(){
+  try {
+    const saved = localStorage.getItem('cd_lang');
+    if (saved === 'zh' || saved === 'en') return saved;
+  } catch {}
+  const first = String((navigator.languages && navigator.languages.length ? navigator.languages[0] : navigator.language) || '').toLowerCase();
+  if (first.startsWith('zh')) return 'zh';
+  if (first) return 'en';
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+    if (/^Asia\/(Shanghai|Chongqing|Harbin|Urumqi|Kashgar|Hong_Kong|Macau|Taipei)$/.test(tz)) return 'zh';
+  } catch {}
+  return 'en';
+}
+
+let LANG = detectLang();
+const t = (key, params) => {
+  let s = (I18N[LANG] && I18N[LANG][key]) ?? I18N.en[key] ?? key;
+  if (params) for (const k in params) s = s.split('{' + k + '}').join(params[k]);
+  return s;
+};
+document.documentElement.lang = LANG === 'zh' ? 'zh-CN' : 'en';
+
+/* ═══════════ 工具函数 ═══════════ */
+const $ = (s, el=document) => el.querySelector(s);
+const $$ = (s, el=document) => [...el.querySelectorAll(s)];
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+function fmtSize(n){
+  n = Number(n)||0;
+  if(n < 1024) return n + ' B';
+  const u = ['KB','MB','GB','TB']; let i = -1;
+  do { n /= 1024; i++; } while(n >= 1024 && i < u.length-1);
+  return n.toFixed(n >= 100 ? 0 : n >= 10 ? 1 : 2) + ' ' + u[i];
+}
+function fmtTime(ts){
+  if(!ts) return '—';
+  const d = new Date(Number(ts)), p = x => String(x).padStart(2,'0');
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+const EXT_COLORS = {
+  zip:'#ffb340',rar:'#ffb340','7z':'#ffb340',tar:'#ffb340',gz:'#ffb340',
+  pdf:'#ff6961',doc:'#5b9cf5',docx:'#5b9cf5',txt:'#9aa4b2',md:'#9aa4b2',
+  xls:'#3ecf8e',xlsx:'#3ecf8e',csv:'#3ecf8e',ppt:'#ff9f0a',pptx:'#ff9f0a',
+  mp3:'#bf5af2',wav:'#bf5af2',flac:'#bf5af2',m4a:'#bf5af2',
+  mp4:'#ff453a',mov:'#ff453a',mkv:'#ff453a',avi:'#ff453a',
+  png:'#30d158',jpg:'#30d158',jpeg:'#30d158',gif:'#30d158',webp:'#30d158',svg:'#30d158',
+  apk:'#3ecf8e',exe:'#9aa4b2',iso:'#9aa4b2',dmg:'#9aa4b2',default:'#8ea0c8'
+};
+const extOf = n => (/\.([a-z0-9]+)$/i.exec(n||'')||[])[1]?.toLowerCase() || '';
+const extColor = n => EXT_COLORS[extOf(n)] || EXT_COLORS.default;
+const ficon = name => `<span class="ficon" style="color:${extColor(name)}">${esc((extOf(name)||'?').toUpperCase().slice(0,4))}</span>`;
+
+async function api(path, opts={}){
+  const r = await fetch(path, { credentials:'same-origin', ...opts,
+    headers: { ...(opts.body && !(opts.body instanceof FormData) ? {'content-type':'application/json'} : {}), ...(opts.headers||{}) } });
+  let data = null;
+  try { data = await r.json(); } catch {}
+  if(r.status === 401 && !path.includes('/login')) { showLogin(); throw new Error('unauthorized'); }
+  if(!r.ok) throw new Error(data?.error || `HTTP ${r.status}`);
+  return data;
+}
+
+function toast(msg, type='ok'){
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.textContent = msg;
+  $('#toasts').appendChild(el);
+  setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 300); }, 2600);
+}
+
+function copyText(text){
+  if(navigator.clipboard?.writeText) return navigator.clipboard.writeText(text).then(() => toast(t('copied')));
+  const ta = document.createElement('textarea');
+  ta.value = text; document.body.appendChild(ta); ta.select();
+  document.execCommand('copy'); ta.remove();
+  return Promise.resolve(toast(t('copied')));
+}
+
+const confirmDialog = (title, msg, danger=true) => new Promise(resolve => {
+  openModal(`
+    <h3>${esc(title)}</h3>
+    <div class="sub">${esc(msg)}</div>
+    <div class="actions">
+      <button class="btn" data-x>${esc(t('cancel'))}</button>
+      <button class="btn ${danger?'danger':'primary'}" data-ok>${esc(t('confirm'))}</button>
+    </div>`);
+  $('[data-ok]').onclick = () => { closeModal(); resolve(true); };
+  $('[data-x]').onclick = () => { closeModal(); resolve(false); };
+});
+
+function toggleLang(){
+  try { localStorage.setItem('cd_lang', LANG === 'zh' ? 'en' : 'zh'); } catch {}
+  location.reload();
+}
+
+/* ═══════════ 模态框 ═══════════ */
+function openModal(html){
+  closeModal();
+  const mask = document.createElement('div');
+  mask.className = 'modal-mask'; mask.id = 'modal';
+  mask.innerHTML = `<div class="modal">${html}</div>`;
+  mask.addEventListener('click', e => { if(e.target === mask) closeModal(); });
+  document.body.appendChild(mask);
+}
+function closeModal(){ $('#modal')?.remove(); }
+
+/* ═══════════ 登录视图（支持 2FA 两阶段） ═══════════ */
+let siteTitle = 'nano-cloud';
+let loginStage = 'password'; // 'password' | '2fa' | 'recovery'
+let savedLoginKey = ''; // 第一阶段输入的 admin key
+
+function showLogin(){
+  document.title = t('docTitle', {site: siteTitle});
+
+  if(loginStage === 'password'){
+    renderLoginCard(`
+      <h1>${esc(siteTitle)}</h1>
+      <div class="sub">${esc(t('loginSubtitle'))}</div>
+      <form id="login-form">
+        <input type="password" id="login-key" placeholder="${esc(t('keyPlaceholder'))}" autocomplete="current-password" autofocus>
+        <button class="btn primary" type="submit">${esc(t('login'))}</button>
+        <div class="err" id="login-err"></div>
+      </form>
+      <div class="lang-row"><button class="btn sm" id="login-lang">${esc(t('switchTo'))}</button></div>
+    `);
+    $('#login-form').onsubmit = async e => {
+      e.preventDefault();
+      const key = $('#login-key').value.trim();
+      if(!key) return;
+      savedLoginKey = key;
+      $('#login-err').textContent = '';
+      try{
+        const r = await api('/api/admin/login', { method:'POST', body: JSON.stringify({ key }) });
+        if(r.need_2fa){
+          loginStage = '2fa';
+          showLogin();
+        }else{
+          showApp();
+        }
+      }catch(err){
+        $('#login-err').textContent = err.message;
+        shake();
+      }
+    };
+    $('#login-lang').onclick = toggleLang;
+  } else if(loginStage === '2fa'){
+    renderLoginCard(`
+      <h1>${esc(t('login2faTitle'))}</h1>
+      <div class="sub">${esc(t('login2faSub'))}</div>
+      <form id="login-form">
+        <input type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" id="login-code" placeholder="${esc(t('login2faPh'))}" autocomplete="one-time-code" autofocus style="text-align:center;letter-spacing:.4em;font-size:20px">
+        <button class="btn primary" type="submit">${esc(t('login2faCode'))}</button>
+        <div class="err" id="login-err"></div>
+      </form>
+      <div style="margin-top:14px;display:flex;gap:10px;justify-content:center">
+        <button class="btn sm" id="login-back">${esc(t('login2faBack'))}</button>
+        <button class="btn sm" id="login-recovery">${esc(t('login2faUseRecovery'))}</button>
+      </div>
+    `);
+    $('#login-form').onsubmit = async e => {
+      e.preventDefault();
+      const code = $('#login-code').value.trim();
+      if(!/^\d{6}$/.test(code)) return;
+      $('#login-err').textContent = '';
+      try{
+        const r = await api('/api/admin/login', { method:'POST', body: JSON.stringify({ key: savedLoginKey, code }) });
+        showApp();
+      }catch(err){
+        $('#login-err').textContent = err.message;
+        shake();
+      }
+    };
+    $('#login-back').onclick = () => { loginStage = 'password'; showLogin(); };
+    $('#login-recovery').onclick = () => { loginStage = 'recovery'; showLogin(); };
+  } else {
+    renderLoginCard(`
+      <h1>${esc(t('login2faTitle'))}</h1>
+      <div class="sub">${esc(t('login2faRecoveryHint'))}</div>
+      <form id="login-form">
+        <input type="text" id="login-recovery-code" placeholder="${esc(t('login2faRecoveryPh'))}" autocomplete="off" autofocus style="letter-spacing:.15em">
+        <button class="btn primary" type="submit">${esc(t('confirm'))}</button>
+        <div class="err" id="login-err"></div>
+      </form>
+      <div style="margin-top:14px">
+        <button class="btn sm" id="login-back">${esc(t('login2faBack'))}</button>
+      </div>
+    `);
+    $('#login-form').onsubmit = async e => {
+      e.preventDefault();
+      const code = $('#login-recovery-code').value.trim();
+      if(!code) return;
+      $('#login-err').textContent = '';
+      try{
+        const r = await api('/api/admin/login', { method:'POST', body: JSON.stringify({ key: savedLoginKey, code }) });
+        if(r.recovery_used && r.totp_reset){
+          // 弹出恢复成功提示
+          openModal(`
+            <h3>${esc(t('login2faRecoveryOk'))}</h3>
+            <div class="sub">${esc(t('login2faRecoveryHint'))}</div>
+            <div class="actions"><button class="btn primary" id="ok">${esc(t('confirm'))}</button></div>
+          `);
+          $('#ok').onclick = () => { closeModal(); showApp(); };
+          return;
+        }
+        showApp();
+      }catch(err){
+        $('#login-err').textContent = err.message;
+        shake();
+      }
+    };
+    $('#login-back').onclick = () => { loginStage = '2fa'; showLogin(); };
+  }
+  // 焦点处理
+  setTimeout(() => {
+    const el = $('#login-form')?.querySelector('input');
+    if(el) el.focus();
+  }, 50);
+}
+
+function shake(){
+  const c = $('.login-card');
+  if(!c) return;
+  c.classList.remove('shake'); void c.offsetWidth; c.classList.add('shake');
+}
+
+function renderLoginCard(bodyHtml){
+  $('#app').innerHTML = `
+  <div id="login-view">
+    <div class="login-card glass">
+      <div class="logo"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2L21 8.5V15.5L12 22L3 15.5V8.5L12 2Z" stroke="#fff" stroke-width="1.8" stroke-linejoin="round" fill="rgba(255,255,255,.14)"/><path d="M12 2V22M3 8.5L12 15L21 8.5M3 15.5L12 9L21 15.5" stroke="#fff" stroke-width="1.2" opacity=".65"/></svg></div>
+      ${bodyHtml}
+    </div>
+  </div>`;
+}
+
+/* ═══════════ 侧边栏导航配置 ═══════════ */
+const NAV_GROUPS = [
+  { key: 'overview', ic: '📊', label: () => t('tabOverview'), tab: 'overview' },
+  { key: 'content', ic: '📦', label: () => t('navContent'), subs: [
+      { tab: 'files',   label: () => t('tabFiles'),   ic: '📁' },
+      { tab: 'storage', label: () => t('tabStorage'), ic: '🗄️' },
+      { tab: 'shares',  label: () => t('tabShares'),  ic: '🔗' },
+      { tab: 'direct',  label: () => t('tabDirect'),  ic: '⚡' },
+    ]},
+  { key: 'analytics', ic: '📈', label: () => t('navAnalytics'), subs: [
+      { tab: 'logs',   label: () => t('tabLogs'),   ic: '📋' },
+      { tab: 'global', label: () => t('tabGlobal'), ic: '🌍' },
+    ]},
+  { key: 'security', ic: '🛡️', label: () => t('navSecurity'), subs: [
+      { tab: 'bans',    label: () => t('tabBans'),    ic: '🚫' },
+      { tab: 'security',label: () => t('tabSecurity'),ic: '🔒' },
+    ]},
+  { key: 'system', ic: '⚙️', label: () => t('navSystem'), subs: [
+      { tab: 'codes',    label: () => t('tabCodes'),    ic: '🎟️' },
+      { tab: 'webdav',   label: () => t('tabWebDAV'),  ic: '🗂️' },
+      { tab: 'settings', label: () => t('tabSettings'), ic: '⚙️' },
+    ]},
+];
+const TAB_TO_GROUP = {};
+NAV_GROUPS.forEach(g => {
+  if (g.tab) TAB_TO_GROUP[g.tab] = g.key;
+  if (g.subs) g.subs.forEach(s => TAB_TO_GROUP[s.tab] = g.key);
+});
+
+/* ═══════════ 主应用 ═══════════ */
+let currentTab = 'overview';
+let openGroup = 'overview'; // 当前展开的侧边栏分组
+let logsPage = 1, logsQuery = '';
+
+async function showApp(){
+  loginStage = 'password'; savedLoginKey = '';
+  try{
+    const s = await api('/api/admin/session');
+    siteTitle = s.site_title || siteTitle;
+    // 隐藏路由：访问 /admin/apple 强制 Apple 玻璃风格（暗色紫蓝渐变）
+    const path = location.pathname;
+    if (/\/admin\/apple(\/|$)/.test(path)) {
+      document.documentElement.dataset.theme = 'apple-dark';
+    } else {
+      // 根据后端偏好设置主题（默认 dark）
+      document.documentElement.dataset.theme = s.ui_theme === 'light' ? 'light' : 'dark';
+    }
+  }catch{
+    // 兜底
+    document.documentElement.dataset.theme = location.pathname.includes('/admin/apple') ? 'apple-dark' : 'dark';
+  }
+  document.title = t('docTitle', {site: siteTitle});
+
+  // 渲染侧边栏
+  const sidebarHtml = NAV_GROUPS.map(g => {
+    const isSingle = !g.subs;
+    const active = (isSingle && currentTab === g.tab) || TAB_TO_GROUP[currentTab] === g.key;
+    const subHtml = g.subs ? `
+      <div class="sb-sub ${active ? 'open' : ''}" data-sub="${g.key}">
+        ${g.subs.map(s => `
+          <button data-tab="${s.tab}" class="${currentTab === s.tab ? 'active' : ''}">
+            <span class="ic">${s.ic}</span>${esc(s.label())}
+          </button>`).join('')}
+      </div>` : '';
+    return `
+      <button class="sb-main ${active ? 'open' : ''} ${isSingle ? 'single' : ''}" data-group="${g.key}" data-tab="${g.tab || ''}">
+        <span class="ic">${g.ic}</span>${esc(g.label())}
+        ${g.subs ? '<span class="chev">▶</span>' : ''}
+      </button>
+      ${subHtml}`;
+  }).join('');
+
+  $('#app').innerHTML = `
+  <div class="wrap">
+    <div class="topbar">
+      <div class="logo"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2L21 8.5V15.5L12 22L3 15.5V8.5L12 2Z" stroke="#fff" stroke-width="1.8" stroke-linejoin="round" fill="rgba(255,255,255,.14)"/><path d="M12 2V22M3 8.5L12 15L21 8.5M3 15.5L12 9L21 15.5" stroke="#fff" stroke-width="1.2" opacity=".65"/></svg></div>
+      <div><h1>${esc(siteTitle)}</h1><div class="sub">${esc(t('topbarSub'))}</div></div>
+      <div class="spacer"></div>
+      <div class="traffic-pill" id="traffic-pill" title="${esc(t('statTraffic'))}">
+        <span class="bar"><i id="pill-bar" style="width:0%"></i></span>
+        <span id="pill-text">— / —</span>
+      </div>
+      <button class="btn sm" id="theme-toggle" title="🌙 / ☀️" style="font-size:16px;padding:9px 11px;line-height:1">${document.documentElement.dataset.theme === 'light' ? '🌙' : '☀️'}</button>
+      <button class="btn sm" id="lang-btn">${esc(t('switchTo'))}</button>
+      <button class="btn sm" id="logout-btn">${esc(t('logout'))}</button>
+    </div>
+    <div class="layout">
+      <nav class="sidebar" id="sidebar">${sidebarHtml}</nav>
+      <div id="view"></div>
+    </div>
+  </div>`;
+
+  // 绑定侧边栏事件
+  $('#sidebar').addEventListener('click', e => {
+    const main = e.target.closest('.sb-main');
+    if (main) {
+      const gKey = main.dataset.group;
+      const tab = main.dataset.tab;
+      if (tab) {
+        // 叶子节点（如 overview）：直接切换
+        switchTab(tab);
+      } else {
+        // 有子菜单的：切换展开/收起
+        const sub = $('#sidebar .sb-sub[data-sub="' + gKey + '"]');
+        main.classList.toggle('open');
+        sub?.classList.toggle('open');
+        openGroup = main.classList.contains('open') ? gKey : null;
+      }
+      return;
+    }
+    const subBtn = e.target.closest('.sb-sub button[data-tab]');
+    if (subBtn) switchTab(subBtn.dataset.tab);
+  });
+
+  $('#logout-btn').onclick = async () => { await api('/api/admin/logout', {method:'POST'}); showLogin(); };
+  $('#traffic-pill').onclick = () => switchTab('settings');
+  $('#lang-btn').onclick = toggleLang;
+  $('#theme-toggle').onclick = async () => {
+    // Apple 主题下（隐藏路由）不允许切换
+    const currentTheme = document.documentElement.dataset.theme;
+    if (currentTheme === 'apple' || currentTheme === 'apple-dark') return;
+    const next = currentTheme === 'light' ? 'dark' : 'light';
+    document.documentElement.dataset.theme = next;
+    $('#theme-toggle').textContent = next === 'light' ? '🌙' : '☀️';
+    try { await api('/api/admin/settings', { method:'PUT', body: JSON.stringify({ ui_theme: next }) }); } catch {}
+  };
+  switchTab('overview');
+}
+
+/* Tab → loadXxx 函数映射 */
+const TAB_LOADERS = {
+  overview: loadOverview, files: loadFiles, storage: loadStorage, shares: loadShares,
+  direct: loadDirectLinks, logs: loadLogs, bans: loadBans,
+  global: loadGlobal, codes: loadCodes, security: loadSecurity, webdav: loadWebDAV, settings: loadSettings,
+};
+
+function switchTab(tab){
+  currentTab = tab;
+  openGroup = TAB_TO_GROUP[tab] || tab;
+  // 更新侧边栏高亮 & 展开
+  const sidebar = $('#sidebar');
+  if (sidebar) {
+    sidebar.querySelectorAll('.sb-main').forEach(m => {
+      const gKey = m.dataset.group;
+      const g = NAV_GROUPS.find(g => g.key === gKey);
+      const isSingle = !g.subs;
+      const isActive = (isSingle && g.tab === tab) || TAB_TO_GROUP[tab] === gKey;
+      m.classList.toggle('open', isActive);
+      m.classList.toggle('active', isActive && isSingle);
+      const sub = sidebar.querySelector('.sb-sub[data-sub="' + gKey + '"]');
+      if (sub) sub.classList.toggle('open', isActive);
+    });
+    sidebar.querySelectorAll('.sb-sub button[data-tab]').forEach(b =>
+      b.classList.toggle('active', b.dataset.tab === tab)
+    );
+  }
+  const v = $('#view');
+  v.innerHTML = '<div class="spin"></div>';
+  (TAB_LOADERS[tab] || (() => Promise.resolve()))().catch(e => {
+    v.innerHTML = `<div class="glass section"><div class="empty"><div class="icon">⚠️</div>${esc(e.message === 'unauthorized' ? t('loadingErr') : e.message)}</div></div>`;
+  });
+}
+
+/* ═══════════ 概览 ═══════════ */
+async function loadOverview(){
+  const s = await api('/api/admin/stats');
+  const pill = $('#traffic-pill');
+  if(pill){
+    pill.classList.toggle('danger', s.traffic.quota_exceeded);
+    $('#pill-bar').style.width = (s.traffic.limit > 0 ? Math.min(100, s.traffic.percent) : 0) + '%';
+    $('#pill-text').textContent = s.traffic.limit > 0
+      ? `${fmtSize(s.traffic.used)} / ${fmtSize(s.traffic.limit)}`
+      : `${fmtSize(s.traffic.used)} / ${t('unlimitedShort')}`;
+  }
+  const maxDl = Math.max(1, ...s.chart.map(c => c.downloads));
+  const c = s.counts;
+  const tip = n => LANG === 'zh' ? `${n} ${t('times')} · ${fmtSize(0)}` : `${n} · ${fmtSize(0)}`;
+  $('#view').innerHTML = `
+    ${s.traffic.quota_exceeded ? `
+    <div class="banner">
+      <div class="ic">🛑</div>
+      <div><div class="t">${esc(t('quotaBannerT'))}</div>
+      <div class="d">${esc(t('quotaBannerD'))}</div></div>
+    </div>` : ''}
+    <div class="stat-grid">
+      <div class="stat-card glass">
+        <div class="label">📡 ${esc(t('statTraffic'))}</div>
+        <div class="value">${fmtSize(s.traffic.used)}${s.traffic.limit>0?`<small>/ ${fmtSize(s.traffic.limit)}</small>`:`<small>${esc(t('unlimitedShort'))}</small>`}</div>
+        <div class="progress ${s.traffic.percent>=80?'hot':''}"><i style="width:${s.traffic.limit>0?Math.min(100,s.traffic.percent):3}%"></i></div>
+        <div class="foot">${s.traffic.limit>0?esc(t('usedPercent',{n:s.traffic.percent})):esc(t('noLimit'))}</div>
+      </div>
+      <div class="stat-card glass">
+        <div class="label">⬇️ ${esc(t('statDownloads'))}</div>
+        <div class="value">${c.downloads_total}</div>
+        <div class="foot">${esc(t('todayN',{n:c.downloads_today}))} · ${fmtSize(c.bytes_today)}</div>
+      </div>
+      <div class="stat-card glass">
+        <div class="label">📁 ${esc(t('statFiles'))}</div>
+        <div class="value">${c.files}</div>
+        <div class="foot">${esc(t('storedR2'))}</div>
+      </div>
+      <div class="stat-card glass">
+        <div class="label">🔗 ${esc(t('statShares'))}</div>
+        <div class="value">${c.shares}</div>
+        <div class="foot">${esc(t('sharesFoot',{a:c.active_shares,b:c.banned}))}</div>
+      </div>
+    </div>
+    <div class="glass section">
+      <div class="section-title"><h2>📊 ${esc(t('chartTitle'))}</h2></div>
+      <div class="chart">
+        ${s.chart.map(d => `
+        <div class="col">
+          <div class="bar" style="height:${Math.max(3, Math.round(d.downloads/maxDl*112))}px">
+            <span>${d.downloads}${LANG==='zh'?' 次':''} · ${fmtSize(d.bytes)}</span>
+          </div>
+          <div class="day">${d.day.slice(5).replace('-','/')}</div>
+        </div>`).join('')}
+      </div>
+    </div>
+    <div class="glass section">
+      <div class="section-title"><h2>🕘 ${esc(t('recentTitle'))}</h2>
+        <button class="btn sm" id="goto-logs">${esc(t('viewAll'))}</button></div>
+      ${s.recent.length ? `
+      <div style="overflow-x:auto"><table class="tbl">
+        <thead><tr><th>${esc(t('colFile'))}</th><th>${esc(t('colIP'))}</th><th>${esc(t('colBrowser'))}</th><th>${esc(t('colOS'))}</th><th>${esc(t('colTraffic'))}</th><th>${esc(t('colTime'))}</th></tr></thead>
+        <tbody>${s.recent.map(r => `
+          <tr>
+            <td class="name-cell">${ficon(r.file_name)} ${esc(r.file_name)}</td>
+            <td class="mono">${esc(r.ip)}</td>
+            <td>${esc(r.browser)}</td>
+            <td>${esc(r.os)}</td>
+            <td class="num">${fmtSize(r.bytes)}</td>
+            <td class="num">${fmtTime(r.created_at)}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table></div>` : `<div class="empty"><div class="icon">📥</div>${esc(t('noLogsYet'))}</div>`}
+    </div>`;
+  $('#goto-logs').onclick = () => switchTab('logs');
+}
+
+/* ═══════════ 文件 ═══════════ */
+async function loadFiles(){
+  const { files } = await api('/api/admin/files');
+  $('#view').innerHTML = `
+    <div class="dropzone" id="dropzone">
+      <div class="icon">☁️</div>
+      <div class="t">${esc(t('dropTitle'))}</div>
+      <div class="d">${esc(t('dropDesc'))}</div>
+      <input type="file" id="file-input" multiple hidden>
+    </div>
+    <div id="upload-list"></div>
+    <div class="glass section">
+      <div class="section-title"><h2>📁 ${esc(t('allFiles'))}（${files.length}）</h2></div>
+      ${files.length ? `
+      <div style="overflow-x:auto"><table class="tbl">
+        <thead><tr><th style="width:44px"></th><th>${esc(t('colName'))}</th><th>${esc(t('colSize'))}</th><th>${esc(t('colShareCount'))}</th><th>${esc(t('colDownloads'))}</th><th>${esc(t('colUploaded'))}</th><th style="width:170px">${esc(t('colActions'))}</th></tr></thead>
+        <tbody>${files.map(f => `
+          <tr>
+            <td>${ficon(f.name)}</td>
+            <td class="name-cell" title="${esc(f.name)}">${esc(f.name)}</td>
+            <td class="num">${fmtSize(f.size)}</td>
+            <td class="num">${f.share_count}</td>
+            <td class="num">${f.download_count}</td>
+            <td class="num">${fmtTime(f.uploaded_at)}</td>
+            <td><div class="actions-cell">
+              <button class="btn sm primary" data-share="${f.id}">${esc(t('createShare'))}</button>
+              <button class="btn sm" data-direct="${f.id}" style="background:rgba(250,204,21,0.15);border-color:rgba(250,204,21,0.35);color:#fde68a">${esc(t('createDirect'))}</button>
+              <button class="btn sm danger" data-del="${f.id}" data-name="${esc(f.name)}">${esc(t('del'))}</button>
+            </div></td>
+          </tr>`).join('')}
+        </tbody>
+      </table></div>` : `<div class="empty"><div class="icon">📭</div>${esc(t('noFiles'))}</div>`}
+    </div>`;
+
+  const dz = $('#dropzone'), fi = $('#file-input');
+  dz.onclick = () => fi.click();
+  dz.ondragover = e => { e.preventDefault(); dz.classList.add('over'); };
+  dz.ondragleave = () => dz.classList.remove('over');
+  dz.ondrop = e => { e.preventDefault(); dz.classList.remove('over'); uploadFiles([...e.dataTransfer.files]); };
+  fi.onchange = () => { uploadFiles([...fi.files]); fi.value = ''; };
+
+  $$('[data-share]').forEach(b => b.onclick = () => openShareModal(b.dataset.share));
+  $$('[data-direct]').forEach(b => b.onclick = () => openDirectModal(b.dataset.direct));
+  $$('[data-del]').forEach(b => b.onclick = async () => {
+    if(!(await confirmDialog(t('deleteFileT'), t('deleteFileD', {name: b.dataset.name})))) return;
+    await api(`/api/admin/files/${b.dataset.del}`, { method:'DELETE' });
+    toast(t('fileDeleted'));
+    loadFiles();
+  });
+}
+
+function uploadFiles(files){
+  for(const file of files){
+    if(file.size > 100 * 1024 * 1024){ toast(t('tooLarge', {name: file.name}), 'err'); continue; }
+    const item = document.createElement('div');
+    item.className = 'upload-item glass';
+    item.innerHTML = `${ficon(file.name)}<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(file.name)}</span>
+      <div class="prog"><i></i></div><span class="pct">0%</span>`;
+    $('#upload-list').prepend(item);
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/admin/upload');
+    xhr.setRequestHeader('X-File-Name', encodeURIComponent(file.name));
+    xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+    xhr.upload.onprogress = e => {
+      const pct = Math.round(e.loaded / e.total * 100);
+      item.querySelector('.prog i').style.width = pct + '%';
+      item.querySelector('.pct').textContent = pct + '%';
+    };
+    xhr.onload = () => {
+      if(xhr.status === 201){ item.querySelector('.pct').textContent = t('uploadDone'); toast(t('uploadOk', {name: file.name})); loadFiles(); }
+      else { item.querySelector('.pct').textContent = t('uploadFailShort'); toast(t('uploadFail', {name: file.name}), 'err'); }
+    };
+    xhr.onerror = () => { item.querySelector('.pct').textContent = t('uploadFailShort'); toast(t('uploadFail', {name: file.name}), 'err'); };
+    xhr.send(file);
+  }
+}
+
+/* ═══════════ 创建分享弹窗 ═══════════ */
+function openShareModal(fileId){
+  openModal(`
+    <h3>${esc(t('shareModalTitle'))}</h3>
+    <div class="sub">${esc(t('shareModalSub'))}</div>
+    <div class="field">
+      <label>${esc(t('validity'))}</label>
+      <select id="sh-exp" style="width:100%;padding:12px 14px;border-radius:14px;font-size:15px;font-family:inherit;color:var(--text);background:var(--sf-input);border:1px solid var(--stroke-strong);outline:none">
+        <option value="0" style="color:#111">${esc(t('perm'))}</option>
+        <option value="1" style="color:#111">${esc(t('h1'))}</option>
+        <option value="24" style="color:#111">${esc(t('d1'))}</option>
+        <option value="168" style="color:#111">${esc(t('d7'))}</option>
+        <option value="720" style="color:#111">${esc(t('d30'))}</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>${esc(t('sharePassword'))}</label>
+      <input type="text" id="sh-pwd" placeholder="${esc(t('sharePasswordPh'))}" autocomplete="off">
+      <div class="tip">${esc(t('sharePasswordHint'))}</div>
+    </div>
+    <div class="field">
+      <label>${esc(t('downloadName'))}</label>
+      <input type="text" id="sh-dlname" placeholder="${esc(t('downloadNamePh'))}">
+      <div class="tip">${esc(t('downloadNameHint'))}</div>
+    </div>
+    <div class="field">
+      <label>${esc(t('maxDownloadsLabel'))}</label>
+      <input type="number" id="sh-max" min="0" placeholder="${esc(t('unlimitedPlaceholder'))}">
+      <div class="tip">${esc(t('maxTip'))}</div>
+    </div>
+    <div class="actions">
+      <button class="btn" data-x>${esc(t('cancel'))}</button>
+      <button class="btn primary" id="sh-create">${esc(t('generate'))}</button>
+    </div>`);
+  $('[data-x]').onclick = closeModal;
+  $('#sh-create').onclick = async () => {
+    const exp = Number($('#sh-exp').value) || null;
+    const max = Number($('#sh-max').value) || null;
+    const password = $('#sh-pwd').value.trim() || null;
+    const download_name = $('#sh-dlname').value.trim() || null;
+    try{
+      const r = await api('/api/admin/shares', { method:'POST', body: JSON.stringify({ file_id: fileId, expires_hours: exp, max_downloads: max, password, download_name }) });
+      const url = location.origin + r.url;
+      openModal(`
+        <h3>${esc(t('shareCreated'))}</h3>
+        <div class="sub">${esc(t('shareCreatedSub'))}</div>
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <div>
+            <div style="font-size:12px;color:rgba(255,255,255,.5);margin-bottom:6px">${esc(t('sharePageLink'))}</div>
+            <div class="link-box">
+              <input readonly value="${esc(url)}" onclick="this.select()">
+              <button class="btn primary" data-copy="${esc(url)}">${esc(t('copy'))}</button>
+            </div>
+          </div>
+
+        </div>
+        <div class="actions">
+          <button class="btn" data-x>${esc(t('close'))}</button>
+          <button class="btn primary" id="sh-open">${esc(t('preview'))}</button>
+        </div>`);
+      document.querySelectorAll('[data-copy]').forEach(b => b.onclick = () => copyText(b.dataset.copy));
+      $('[data-x]').onclick = closeModal;
+      $('#sh-open').onclick = () => window.open(r.url, '_blank');
+    }catch(e){ toast(e.message, 'err'); }
+  };
+}
+
+
+/* ═══════════ 创建直链弹窗 ═══════════ */
+function openDirectModal(fileId){
+  openModal(`
+    <h3>${esc(t('directModalTitle'))}</h3>
+    <div class="sub">${esc(t('directModalSub'))}</div>
+    <div class="field">
+      <label>${esc(t('validity'))}</label>
+      <select id="dl-exp" style="width:100%;padding:12px 14px;border-radius:14px;font-size:15px;font-family:inherit;color:var(--text);background:var(--sf-input);border:1px solid var(--stroke-strong);outline:none">
+        <option value="0" style="color:#111">${esc(t('perm'))}</option>
+        <option value="1" style="color:#111">${esc(t('h1'))}</option>
+        <option value="24" style="color:#111">${esc(t('d1'))}</option>
+        <option value="168" style="color:#111">${esc(t('d7'))}</option>
+        <option value="720" style="color:#111">${esc(t('d30'))}</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>${esc(t('maxDownloadsLabel'))}</label>
+      <input type="number" id="dl-max" min="0" placeholder="${esc(t('unlimitedPlaceholder'))}">
+      <div class="tip">${esc(t('maxTip'))}</div>
+    </div>
+    <div class="field">
+      <label>${esc(t('downloadName'))}</label>
+      <input type="text" id="dl-dlname" placeholder="${esc(t('downloadNamePh'))}">
+      <div class="tip">${esc(t('downloadNameHint'))}</div>
+    </div>
+    <div class="field">
+      <label>${esc(t('directModalNotes'))}</label>
+      <input type="text" id="dl-notes" placeholder="${esc(t('directModalNotesPh'))}">
+    </div>
+    <div class="actions">
+      <button class="btn" data-x>${esc(t('cancel'))}</button>
+      <button class="btn primary" id="dl-create">${esc(t('generate'))}</button>
+    </div>`);
+  $('[data-x]').onclick = closeModal;
+  $('#dl-create').onclick = async () => {
+    const exp = Number($('#dl-exp').value) || null;
+    const max = Number($('#dl-max').value) || null;
+    const download_name = $('#dl-dlname').value.trim() || null;
+    const notes = $('#dl-notes').value.trim() || null;
+    try{
+      const r = await api('/api/admin/direct-links', { method:'POST', body: JSON.stringify({ file_id: fileId, expires_hours: exp, max_downloads: max, download_name, notes }) });
+      const url = location.origin + r.url;
+      openModal(`
+        <h3>${esc(t('directCreated'))}</h3>
+        <div class="sub">${esc(t('directCreatedSub'))}</div>
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <div>
+            <div style="font-size:12px;color:rgba(255,255,255,.5);margin-bottom:6px">${esc(t('directUrlLabel'))}</div>
+            <div class="link-box">
+              <input readonly value="${esc(url)}" onclick="this.select()">
+              <button class="btn primary" data-copy="${esc(url)}">${esc(t('copy'))}</button>
+            </div>
+          </div>
+        </div>
+        <div class="actions">
+          <button class="btn" data-x>${esc(t('close'))}</button>
+          <button class="btn primary" id="dl-open">${esc(t('preview'))}</button>
+        </div>`);
+      document.querySelectorAll('[data-copy]').forEach(b => b.onclick = () => copyText(b.dataset.copy));
+      $('[data-x]').onclick = closeModal;
+      $('#dl-open').onclick = () => window.open(r.url, '_blank');
+    }catch(e){ toast(e.message, 'err'); }
+  };
+}
+
+/* ═══════════ 存储浏览（S3 / R2） ═══════════ */
+let _stgPrefix = '';
+let _stgMarker = undefined;
+async function loadStorage(){
+  const isZh = LANG === "zh";
+  const getView = () => document.getElementById('view');
+
+  function breadcrumbs(prefix){
+    const parts = prefix ? prefix.split('/').filter(Boolean) : [];
+    const arr = [{ name: isZh ? '根目录' : 'Root', prefix: '' }];
+    let acc = '';
+    for (const p of parts){
+      acc += p + '/';
+      arr.push({ name: p, prefix: acc });
+    }
+    return arr;
+  }
+
+  async function render(){
+    const view = getView();
+    if (!view) return;
+    view.innerHTML = `<div class="spin"></div>`;
+    try{
+      const url = `/api/admin/storage/objects?prefix=${encodeURIComponent(_stgPrefix || '')}${_stgMarker ? '&marker=' + encodeURIComponent(_stgMarker) : ''}&limit=100`;
+      const r = await api(url);
+      const kind = r.kind === 'r2' ? 'R2' : r.kind === 'webdav' ? 'WebDAV' : 'S3';
+      const bc = breadcrumbs(_stgPrefix);
+
+      const bcHtml = bc.map((part, i) => {
+        const isLast = i === bc.length - 1;
+        const label = esc(part.name);
+        if (isLast) return `<span style="font-family:ui-monospace,monospace">${label}</span>`;
+        return `<a href="javascript:void(0)" data-prefix="${esc(part.prefix)}" class="stg-bc" style="color:var(--blue);text-decoration:none;font-family:ui-monospace,monospace">${label}</a>`;
+      }).join('<span style="opacity:.35;margin:0 6px">/</span>');
+
+      const rows = [...(r.entries ?? [])].sort((a,b)=>{
+        if(a.isDir !== b.isDir) return a.isDir ? -1 : 1;
+        return a.name.localeCompare(b.name);
+      });
+
+      let html2 = `
+        <div class="glass group" style="padding:18px 22px">
+          <div class="row" style="gap:12px;flex-wrap:wrap">
+            <div style="flex:1;min-width:260px">
+              <div style="font-size:13px;opacity:.6;margin-bottom:4px">${isZh ? '当前路径' : 'Current path'}</div>
+              <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                <span style="opacity:.5">${kind}</span>
+                <span style="opacity:.35">·</span>
+                ${bcHtml}
+              </div>
+            </div>
+            <div style="display:flex;gap:8px">
+              <button class="btn sm" id="stg-refresh">🔄 ${isZh?'刷新':'Refresh'}</button>
+              <button class="btn sm danger" id="stg-delete-sel">🗑️ ${isZh ? '删除选中' : 'Delete Selected'}</button>
+            </div>
+          </div>
+        </div>
+        <div class="glass group" style="padding:0;overflow:auto">
+          <table class="tbl" style="margin:0">
+            <thead><tr>
+              <th style="width:36px"><input type="checkbox" id="stg-check-all"></th>
+              <th>${esc(t('colName'))}</th>
+              <th style="width:120px">${esc(t('colSize'))}</th>
+              <th style="width:170px">${esc(t('colTime'))}</th>
+              <th style="width:140px">${esc(t('colActions'))}</th>
+            </tr></thead>
+            <tbody id="stg-tbody">
+      `;
+      if (rows.length === 0){
+        html2 += `<tr><td colspan="5" style="text-align:center;padding:48px;opacity:.6">${isZh ? '此目录为空' : 'This directory is empty'}</td></tr>`;
+      } else {
+        html2 += rows.map(e => {
+          const rowKey = esc(e.key);
+          if (e.isDir){
+            return `<tr data-key="${rowKey}">
+              <td></td>
+              <td><a href="javascript:void(0)" class="stg-dir" data-prefix="${esc(e.key)}" style="text-decoration:none;color:inherit;display:inline-flex;align-items:center;gap:8px">📁 <strong>${esc(e.name.replace(/\/$/, ''))}</strong></a></td>
+              <td style="opacity:.35">—</td>
+              <td style="opacity:.35">—</td>
+              <td></td>
+            </tr>`;
+          }
+          const icon = ficon(e.name);
+          return `<tr data-key="${rowKey}">
+            <td><input type="checkbox" class="stg-chk"></td>
+            <td style="display:flex;align-items:center;gap:10px">${icon}<span style="font-family:ui-monospace,monospace">${esc(e.name)}</span></td>
+            <td class="num">${fmtSize(e.size)}</td>
+            <td class="num" style="white-space:nowrap">${e.lastModified ? fmtTime(e.lastModified) : '—'}</td>
+            <td style="white-space:nowrap">
+              <button class="btn sm" data-copy-key="${rowKey}">${isZh ? '复制Key' : 'Copy Key'}</button>
+            </td>
+          </tr>`;
+        }).join('');
+      }
+      html2 += `</tbody></table>
+        </div>
+        ${r.truncated ? `<div style="text-align:center;padding:14px"><button class="btn" id="stg-load-more">${isZh ? '加载更多…' : 'Load more…'}</button></div>` : ''}
+      `;
+      const v2 = getView();
+      if (v2) v2.innerHTML = html2;
+
+      // ── 事件绑定（只绑一次成功渲染后） ──
+      document.getElementById('stg-refresh')?.addEventListener('click', () => { _stgMarker = undefined; render(); });
+      document.getElementById('stg-load-more')?.addEventListener('click', () => { render(); });
+
+      document.querySelectorAll('.stg-bc').forEach(a => {
+        a.addEventListener('click', () => {
+          _stgPrefix = a.dataset.prefix || '';
+          _stgMarker = undefined;
+          render();
+        });
+      });
+
+      document.querySelectorAll('.stg-dir').forEach(a => {
+        a.addEventListener('click', () => {
+          _stgPrefix = a.dataset.prefix || '';
+          _stgMarker = undefined;
+          render();
+        });
+      });
+
+      document.querySelectorAll('[data-copy-key]').forEach(b => {
+        b.addEventListener('click', () => copyText(b.dataset.copyKey));
+      });
+
+      const checkAll = document.getElementById('stg-check-all');
+      if (checkAll){
+        checkAll.addEventListener('change', () => {
+          document.querySelectorAll('.stg-chk').forEach(c => c.checked = checkAll.checked);
+        });
+      }
+
+      document.getElementById('stg-delete-sel')?.addEventListener('click', async () => {
+        const keys = [...document.querySelectorAll('.stg-chk:checked')].map(c => c.closest('tr')?.dataset.key).filter(Boolean);
+        if (keys.length === 0){ toast(isZh ? '请先选择要删除的对象' : 'Select at least one object first', 'err'); return; }
+        if (!(await confirmDialog(
+          isZh ? `删除 ${keys.length} 个对象？` : `Delete ${keys.length} objects?`,
+          isZh ? '此操作会直接从存储中删除对象，数据库文件记录不受影响。不可恢复。' : 'This removes objects directly from storage. DB file records are not affected. Cannot be undone.',
+          true
+        ))) return;
+        try{
+          const r2 = await api('/api/admin/storage/objects', { method:'DELETE', body: JSON.stringify({ keys }) });
+          toast((isZh ? '已删除 {n} 个对象' : 'Deleted {n} objects').replace('{n}', r2.deleted));
+          _stgMarker = undefined;
+          render();
+        }catch(e2){ toast(e2.message, 'err'); }
+      });
+    }catch(e){
+      const v3 = getView();
+      if (v3) v3.innerHTML = `<div class="glass group" style="padding:32px;text-align:center;opacity:.85">
+        <div style="font-size:18px;font-weight:600;margin-bottom:8px">${isZh ? '存储浏览暂不可用' : 'Storage browser unavailable'}</div>
+        <div style="font-size:13px;opacity:.7">${esc(e.message || e)}</div>
+      </div>`;
+    }
+  }
+  render();
+}
+
+/* ═══════════ 分享 ═══════════ */
+async function loadShares(){
+  const { shares } = await api('/api/admin/shares');
+  const STATUS_KEY = { active:'stActive', expired:'stExpired', revoked:'stRevoked', maxed:'stMaxed' };
+  $('#view').innerHTML = `
+    <div class="glass section">
+      <div class="section-title"><h2>🔗 ${esc(t('sharesTitle'))}（${shares.length}）</h2>
+        <button class="btn sm" id="cleanup-shares">${esc(t('cleanup'))}</button></div>
+      ${shares.length ? `
+      <div style="overflow-x:auto"><table class="tbl">
+        <thead><tr><th>${esc(t('colFile'))}</th><th>${esc(t('colLink'))}</th><th>${esc(t('passwordCol'))}</th><th>${esc(t('colDownloads'))} / ${esc(t('colExpires'))}</th><th>${esc(t('colCreated'))}</th><th>${esc(t('colExpires'))}</th><th>${esc(t('colStatus'))}</th><th style="width:80px">${esc(t('colActions'))}</th></tr></thead>
+        <tbody>${shares.map(s => {
+          const pw = s.has_password ? (s.password_plain || '') : null;
+          return `
+          <tr>
+            <td class="name-cell">${ficon(s.file_name)} ${esc(s.file_name)}${s.download_name && s.download_name !== s.file_name ? `<div style="font-size:11px;color:#6ee7b7;margin-top:2px">↳ ${esc(s.download_name)}</div>` : ''}</td>
+            <td class="mono">${s.has_password?'🔒 ':''}<a href="/s/${s.id}" target="_blank" style="color:var(--blue);text-decoration:none">/s/${s.id}</a></td>
+            <td class="mono">${pw ? `<span id="pw-${s.id}" style="font-family:ui-monospace,'SF Mono',monospace;color:#fde68a">••••••</span>
+              <button class="btn sm" data-pw="${s.id}" data-val="${esc(pw)}" style="padding:2px 8px;font-size:11px;margin-left:4px">👁</button>
+              <button class="btn sm" data-cpw="${esc(pw)}" style="padding:2px 8px;font-size:11px">📋</button>` : `<span style="color:var(--text-3)">—</span>`}</td>
+            <td class="num">${s.download_count} / ${s.max_downloads ?? '∞'}</td>
+            <td class="num">${fmtTime(s.created_at)}</td>
+            <td class="num">${s.expires_at ? fmtTime(s.expires_at) : esc(t('forever'))}</td>
+            <td><span class="tag ${s.status}"><i></i>${esc(t(STATUS_KEY[s.status]))}</span></td>
+            <td><button class="btn sm danger" data-rv="${s.id}">${esc(t('revoke'))}</button></td>
+          </tr>`;
+        }).join('')}
+        </tbody>
+      </table></div>` : `<div class="empty"><div class="icon">🔗</div>${esc(t('noShares'))}</div>`}
+    </div>`;
+  $('#cleanup-shares').onclick = async () => {
+    if(!(await confirmDialog(t('confirmCleanupT'), t('confirmCleanupD'), false))) return;
+    const r = await api('/api/admin/shares/cleanup', { method:'POST' });
+    toast(t('cleanedN', {n: r.deleted}));
+    loadShares();
+  };
+  $$('[data-rv]').forEach(b => b.onclick = async () => {
+    if(!(await confirmDialog(t('confirmRevokeT'), t('confirmRevokeD')))) return;
+    await api(`/api/admin/shares/${b.dataset.rv}`, { method:'DELETE' });
+    toast(t('shareRevoked'));
+    loadShares();
+  });
+  // 密码显示/隐藏
+  $$('[data-pw]').forEach(b => {
+    b.onclick = () => {
+      const id = b.dataset.pw, val = b.dataset.val;
+      const el = $(`#pw-${id}`);
+      if(el.textContent === '••••••') {
+        el.textContent = val;
+        b.textContent = '🙈';
+      } else {
+        el.textContent = '••••••';
+        b.textContent = '👁';
+      }
+    };
+  });
+  // 复制密码
+  $$('[data-cpw]').forEach(b => {
+    b.onclick = () => copyText(b.dataset.cpw);
+  });
+  // 复制直链
+  $$('[data-cdirect]').forEach(b => {
+    b.onclick = () => copyText(b.dataset.cdirect);
+  });
+}
+
+/* ═══════════ 记录 ═══════════ */
+async function loadLogs(){
+  const q = encodeURIComponent(logsQuery);
+  const d = await api(`/api/admin/logs?page=${logsPage}&per_page=20&q=${q}`);
+  $('#view').innerHTML = `
+    <div class="glass section">
+      <div class="section-title"><h2>📜 ${esc(t('logsTitle'))}（${esc(t('totalN',{n:d.total}))}）</h2>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <input id="log-q" placeholder="${esc(t('searchPlaceholder'))}" value="${esc(logsQuery)}"
+            style="padding:8px 14px;border-radius:12px;font-size:13px;font-family:inherit;color:var(--text);background:var(--sf-input);border:1px solid var(--stroke-strong);outline:none;width:180px">
+          <button class="btn sm" id="clear-30">${esc(t('clear30'))}</button>
+          <button class="btn sm danger" id="clear-all">${esc(t('clearAll'))}</button>
+        </div>
+      </div>
+      ${d.logs.length ? `
+      <div style="overflow-x:auto"><table class="tbl">
+        <thead><tr><th>${esc(t('colFile'))}</th><th>${esc(t('colIP'))}</th><th>${esc(t('colCountry'))}</th><th>${esc(t('colBrowser'))}</th><th>${esc(t('colOS'))}</th><th>${esc(t('colTraffic'))}</th><th>${esc(t('colTime'))}</th></tr></thead>
+        <tbody>${d.logs.map(l => `
+          <tr>
+            <td class="name-cell" title="${esc(l.file_name)}">${ficon(l.file_name)} ${esc(l.file_name)}</td>
+            <td class="mono">${esc(l.ip)}</td>
+            <td>${esc(l.country || '—')}</td>
+            <td>${esc(l.browser)}</td>
+            <td>${esc(l.os)}</td>
+            <td class="num">${fmtSize(l.bytes)}</td>
+            <td class="num">${fmtTime(l.created_at)}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table></div>
+      <div class="pager">
+        <button class="btn sm" id="pg-prev" ${d.page<=1?'disabled':''}>${esc(t('prev'))}</button>
+        <span class="info">${esc(t('pageOf',{a:d.page,b:d.pages}))}</span>
+        <button class="btn sm" id="pg-next" ${d.page>=d.pages?'disabled':''}>${esc(t('next'))}</button>
+      </div>` : `<div class="empty"><div class="icon">📜</div>${esc(logsQuery ? t('noMatch') : t('noLogs'))}</div>`}
+    </div>`;
+  let timer;
+  $('#log-q').oninput = e => { clearTimeout(timer); timer = setTimeout(() => { logsQuery = e.target.value.trim(); logsPage = 1; loadLogs(); }, 350); };
+  $('#pg-prev')?.addEventListener('click', () => { logsPage--; loadLogs(); });
+  $('#pg-next')?.addEventListener('click', () => { logsPage++; loadLogs(); });
+  $('#clear-30').onclick = async () => {
+    if(!(await confirmDialog(t('confirmClear30T'), t('confirmClear30D')))) return;
+    const r = await api('/api/admin/logs?mode=older&days=30', { method:'DELETE' });
+    toast(t('clearedN', {n: r.deleted})); loadLogs();
+  };
+  $('#clear-all').onclick = async () => {
+    if(!(await confirmDialog(t('confirmClearAllT'), t('confirmClearAllD')))) return;
+    const r = await api('/api/admin/logs?mode=all', { method:'DELETE' });
+    toast(t('clearedN', {n: r.deleted})); loadLogs();
+  };
+}
+
+/* ═══════════ 直链 ═══════════ */
+async function loadDirectLinks(){
+  const { direct_links } = await api('/api/admin/direct-links');
+  const STATUS_KEY = { active:'stDirectActive', expired:'stDirectExpired', revoked:'stDirectRevoked', maxed:'stDirectMaxed' };
+  $('#view').innerHTML = `
+    <div class="glass section">
+      <div class="section-title"><h2>🔗 ${esc(t('directLinksTitle'))}（${direct_links.length}）</h2>
+        <button class="btn sm" id="cleanup-directs">${esc(t('cleanupDirects'))}</button></div>
+      ${direct_links.length ? `
+      <div style="overflow-x:auto"><table class="tbl">
+        <thead><tr>
+          <th>${esc(t('colFile'))}</th><th>${esc(t('colLink'))}</th>
+          <th>备注</th>
+          <th>${esc(t('colDownloads'))} / ${esc(t('colExpires'))}</th>
+          <th>${esc(t('colCreated'))}</th><th>${esc(t('colStatus'))}</th>
+          <th style="width:80px">${esc(t('colActions'))}</th>
+        </tr></thead>
+        <tbody>${direct_links.map(d => `
+          <tr>
+            <td class="name-cell">${ficon(d.file_name)} ${esc(d.file_name)}${d.download_name && d.download_name !== d.file_name ? `<div style="font-size:11px;color:#6ee7b7;margin-top:2px">↳ ${esc(d.download_name)}</div>` : ''}</td>
+            <td class="mono"><a href="/d/${d.id}" target="_blank" style="color:#fde68a;text-decoration:none">/d/${d.id}</a>
+              <button class="btn sm" data-cdl="${location.origin}/d/${d.id}" style="padding:1px 6px;font-size:10px;margin-left:4px">📋</button></td>
+            <td>${d.notes ? esc(d.notes) : '<span style="color:var(--text-3)">—</span>'}</td>
+            <td class="num">${d.download_count} / ${d.max_downloads ?? '∞'}</td>
+            <td class="num">${fmtTime(d.created_at)}</td>
+            <td><span class="tag ${d.status}"><i></i>${esc(t(STATUS_KEY[d.status]))}</span></td>
+            <td><button class="btn sm danger" data-rvdl="${d.id}">${esc(t('revokeDirect'))}</button></td>
+          </tr>`).join('')}
+        </tbody>
+      </table></div>` : `<div class="empty"><div class="icon">🔗</div>${esc(t('noDirectLinks'))}</div>`}
+    </div>`;
+  $('#cleanup-directs').onclick = async () => {
+    if(!(await confirmDialog(t('confirmCleanupDirectT'), t('confirmCleanupDirectD'), false))) return;
+    const r = await api('/api/admin/direct-links/cleanup', { method:'POST' });
+    toast(t('cleanedDirectN', {n: r.deleted}));
+    loadDirectLinks();
+  };
+  document.querySelectorAll('[data-cdl]').forEach(b => b.onclick = () => copyText(b.dataset.cdl));
+  $$('[data-rvdl]').forEach(b => b.onclick = async () => {
+    if(!(await confirmDialog(t('confirmRevokeDirectT'), t('confirmRevokeDirectD')))) return;
+    await api(`/api/admin/direct-links/${b.dataset.rvdl}`, { method:'DELETE' });
+    toast(t('directRevoked'));
+    loadDirectLinks();
+  });
+}
+
+
+/* ═══════════ 封禁 ═══════════ */
+async function loadBans(){
+  const { bans } = await api('/api/admin/bans');
+  $('#view').innerHTML = `
+    <div class="glass section" style="margin-bottom:18px">
+      <div class="section-title"><h2>⛔ ${esc(t('manualBan'))}</h2></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <input id="ban-ip" placeholder="${esc(t('ipPlaceholder'))}" class="mono"
+          style="flex:1;min-width:160px;padding:11px 14px;border-radius:14px;font-size:14px;color:var(--text);background:var(--sf-input);border:1px solid var(--stroke-strong);outline:none">
+        <input id="ban-reason" placeholder="${esc(t('reasonPlaceholder'))}"
+          style="flex:1;min-width:160px;padding:11px 14px;border-radius:14px;font-size:14px;font-family:inherit;color:var(--text);background:var(--sf-input);border:1px solid var(--stroke-strong);outline:none">
+        <button class="btn primary" id="ban-add">${esc(t('ban'))}</button>
+      </div>
+      <div class="field" style="margin:12px 0 0"><div class="tip">${esc(t('banTip'))}</div></div>
+    </div>
+    <div class="glass section">
+      <div class="section-title"><h2>🚫 ${esc(t('banList'))}（${bans.length}）</h2></div>
+      ${bans.length ? `
+      <div style="overflow-x:auto"><table class="tbl">
+        <thead><tr><th>${esc(t('colIP'))}</th><th>${esc(t('colReason'))}</th><th>${esc(t('colBannedAt'))}</th><th>${esc(t('colUntil'))}</th><th style="width:80px">${esc(t('colActions'))}</th></tr></thead>
+        <tbody>${bans.map(b => `
+          <tr>
+            <td class="mono">${esc(b.ip)}</td>
+            <td class="name-cell" title="${esc(b.reason)}">${esc(b.reason || '—')}</td>
+            <td class="num">${fmtTime(b.banned_at)}</td>
+            <td class="num">${b.expires_at ? fmtTime(b.expires_at) : esc(t('forever'))}</td>
+            <td><button class="btn sm" data-unban="${esc(b.ip)}">${esc(t('unban'))}</button></td>
+          </tr>`).join('')}
+        </tbody>
+      </table></div>` : `<div class="empty"><div class="icon">✅</div>${esc(t('noBans'))}</div>`}
+    </div>`;
+  $('#ban-add').onclick = async () => {
+    const ip = $('#ban-ip').value.trim();
+    if(!ip) return toast(t('enterIp'), 'err');
+    try{
+      await api('/api/admin/bans', { method:'POST', body: JSON.stringify({ ip, reason: $('#ban-reason').value.trim() || undefined }) });
+      toast(t('bannedIp', {ip})); loadBans();
+    }catch(e){ toast(e.message, 'err'); }
+  };
+  $$('[data-unban]').forEach(b => b.onclick = async () => {
+    await api(`/api/admin/bans/${encodeURIComponent(b.dataset.unban)}`, { method:'DELETE' });
+    toast(t('unbannedIp', {ip: b.dataset.unban})); loadBans();
+  });
+}
+
+/* ═══════════ 登录安全审计 ═══════════ */
+let secPage = 1, secQuery = '', secAction = '', secResult = '';
+async function loadSecurity(){
+  const q = encodeURIComponent(secQuery);
+  const params = `page=${secPage}&per_page=20&q=${q}&action=${secAction}&result=${secResult}`;
+  const d = await api(`/api/admin/login-logs?${params}`);
+
+  const actionMap = { login: t('actionLogin'), logout: t('actionLogout'), verify_fail: t('actionFail'), rate_limited: t('actionRateLimited') };
+  const reasonMap = { invalid_key: t('secReasonInvalid'), rate_limited: t('secReasonRateLimited'), session_expired: t('secReasonSession') };
+
+  const badge24h = d.fail_last_24h;
+  $('#view').innerHTML = `
+    ${badge24h > 0 ? `
+    <div class="banner">
+      <div class="ic">⚠️</div>
+      <div><div class="t">${esc(t('secBadgeFail24h', {n: badge24h}))}</div>
+      <div class="d">${esc(t('secSubtitle'))}</div></div>
+    </div>` : ''}
+    <div class="glass section" style="margin-bottom:18px">
+      <div class="section-title"><h2>🛡️ ${esc(t('secTitle'))}</h2>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          ${badge24h === 0 ? `<span class="tag active"><i></i>${esc(t('secBadgeSafe'))}</span>` : `<span class="tag revoked"><i></i>${esc(t('secBadgeFail24h',{n:badge24h}))}</span>`}
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <select id="sec-action" style="padding:8px 12px;border-radius:12px;font-size:13px;font-family:inherit;color:var(--text);background:var(--sf-input);border:1px solid var(--stroke-strong);outline:none">
+          <option value="" style="color:#111">${esc(t('secActionAll'))}</option>
+          <option value="login" style="color:#111">${esc(t('actionLogin'))}</option>
+          <option value="logout" style="color:#111">${esc(t('actionLogout'))}</option>
+        </select>
+        <select id="sec-result" style="padding:8px 12px;border-radius:12px;font-size:13px;font-family:inherit;color:var(--text);background:var(--sf-input);border:1px solid var(--stroke-strong);outline:none">
+          <option value="" style="color:#111">${esc(t('secFilterAll'))}</option>
+          <option value="success" style="color:#111">${esc(t('secFilterSuccess'))}</option>
+          <option value="fail" style="color:#111">${esc(t('secFilterFail'))}</option>
+        </select>
+        <input id="sec-q" placeholder="${esc(t('secSearchPh'))}" value="${esc(secQuery)}"
+          style="padding:8px 14px;border-radius:12px;font-size:13px;font-family:inherit;color:var(--text);background:var(--sf-input);border:1px solid var(--stroke-strong);outline:none;flex:1;min-width:160px">
+        <button class="btn sm" id="sec-clear-30">${esc(t('secClear30'))}</button>
+        <button class="btn sm danger" id="sec-clear-all">${esc(t('secClearAll'))}</button>
+      </div>
+    </div>
+    <div class="glass section">
+      ${d.logs.length ? `
+      <div style="overflow-x:auto"><table class="tbl">
+        <thead><tr><th>${esc(t('colAction'))}</th><th>${esc(t('colIP'))}</th><th>${esc(t('colCountry'))}</th><th>${esc(t('colBrowser'))}</th><th>${esc(t('colOS'))}</th><th>${esc(t('colResult'))}</th><th>${esc(t('colReason'))}</th><th>${esc(t('colLoginTime'))}</th></tr></thead>
+        <tbody>${d.logs.map(l => {
+          const actText = actionMap[l.action] || l.action;
+          const reasonText = l.reason ? (reasonMap[l.reason] || l.reason) : '—';
+          return `<tr>
+            <td><span class="tag ${l.result === 'success' ? 'active' : 'revoked'}"><i></i>${esc(actText)}</span></td>
+            <td class="mono">${esc(l.ip)}</td>
+            <td>${esc(l.country || '—')}</td>
+            <td>${esc(l.browser)}</td>
+            <td>${esc(l.os)}</td>
+            <td>${l.result === 'success' ? '<span style="color:#6ee7b7">✓ ' + esc(t('resultSuccess')) + '</span>' : '<span style="color:#fda293">✗ ' + esc(t('resultFail')) + '</span>'}</td>
+            <td class="name-cell" title="${esc(reasonText)}">${esc(reasonText)}</td>
+            <td class="num">${fmtTime(l.created_at)}</td>
+          </tr>`;
+        }).join('')}
+        </tbody>
+      </table></div>
+      <div class="pager">
+        <button class="btn sm" id="sec-pg-prev" ${d.page<=1?'disabled':''}>${esc(t('prev'))}</button>
+        <span class="info">${esc(t('pageOf',{a:d.page,b:d.pages}))} · ${esc(t('totalN',{n:d.total}))}</span>
+        <button class="btn sm" id="sec-pg-next" ${d.page>=d.pages?'disabled':''}>${esc(t('next'))}</button>
+      </div>` : `<div class="empty"><div class="icon">🛡️</div>${esc(t('secNoLogs'))}</div>`}
+    </div>`;
+
+  $('#sec-action').value = secAction;
+  $('#sec-result').value = secResult;
+  $('#sec-action').onchange = e => { secAction = e.target.value; secPage = 1; loadSecurity(); };
+  $('#sec-result').onchange = e => { secResult = e.target.value; secPage = 1; loadSecurity(); };
+  let secTimer;
+  $('#sec-q').oninput = e => { clearTimeout(secTimer); secTimer = setTimeout(() => { secQuery = e.target.value.trim(); secPage = 1; loadSecurity(); }, 350); };
+  $('#sec-pg-prev')?.addEventListener('click', () => { secPage--; loadSecurity(); });
+  $('#sec-pg-next')?.addEventListener('click', () => { secPage++; loadSecurity(); });
+  $('#sec-clear-30').onclick = async () => {
+    if(!(await confirmDialog(t('secConfirmClear30T'), t('secConfirmClear30D'), false))) return;
+    const r = await api('/api/admin/login-logs?mode=older&days=30', { method:'DELETE' });
+    toast(t('secClearedN', {n: r.deleted})); loadSecurity();
+  };
+  $('#sec-clear-all').onclick = async () => {
+    if(!(await confirmDialog(t('secConfirmClearAllT'), t('secConfirmClearAllD')))) return;
+    const r = await api('/api/admin/login-logs?mode=all', { method:'DELETE' });
+    toast(t('secClearedN', {n: r.deleted})); loadSecurity();
+  };
+}
+
+/* ═══════════ 全球分布 —— ECharts 3D 地球仪 ═══════════ */
+let echartsLoaded = false;
+let echartsLoadingPromise = null;
+let globalDays = 30;
+let globeChart = null;
+
+/** 动态加载 ECharts + echarts-gl + world-atlas（首次进入全球分布 Tab 时才加载） */
+function ensureECharts(){
+  if (echartsLoaded) return Promise.resolve();
+  if (echartsLoadingPromise) return echartsLoadingPromise;
+  echartsLoadingPromise = new Promise((resolve, reject) => {
+    // 按顺序加载：echarts → echarts-gl → world-atlas 地图数据
+    const loadScript = (src, cb) => {
+      const s = document.createElement('script');
+      s.src = src;
+      s.onload = cb;
+      s.onerror = () => reject(new Error('Failed to load ' + src));
+      document.head.appendChild(s);
+    };
+    loadScript('https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js', () => {
+      loadScript('https://cdn.jsdelivr.net/npm/echarts-gl@2.0.9/dist/echarts-gl.min.js', () => {
+        loadScript('https://cdn.jsdelivr.net/npm/echarts@5.5.1/map/json/world.json', () => {
+          echartsLoaded = true;
+          resolve();
+        });
+      });
+    });
+  });
+  return echartsLoadingPromise;
+}
+
+/** ISO 3166 国家代码 → 国名映射（用于 tooltip） */
+const COUNTRY_NAMES = {
+  'US': '美国', 'CN': '中国', 'JP': '日本', 'KR': '韩国', 'GB': '英国', 'DE': '德国',
+  'FR': '法国', 'CA': '加拿大', 'AU': '澳大利亚', 'BR': '巴西', 'IN': '印度',
+  'RU': '俄罗斯', 'IT': '意大利', 'ES': '西班牙', 'NL': '荷兰', 'PL': '波兰',
+  'TR': '土耳其', 'MX': '墨西哥', 'AR': '阿根廷', 'ZA': '南非', 'SG': '新加坡',
+  'HK': '香港', 'TW': '台湾', 'TH': '泰国', 'VN': '越南', 'ID': '印度尼西亚',
+  'PH': '菲律宾', 'MY': '马来西亚', 'NZ': '新西兰', 'SE': '瑞典', 'NO': '挪威',
+  'FI': '芬兰', 'DK': '丹麦', 'CH': '瑞士', 'AT': '奥地利', 'BE': '比利时',
+  'IE': '爱尔兰', 'PT': '葡萄牙', 'GR': '希腊', 'IL': '以色列', 'AE': '阿联酋',
+  'SA': '沙特阿拉伯', 'EG': '埃及', 'MA': '摩洛哥', 'NG': '尼日利亚', 'KE': '肯尼亚',
+  'CO': '哥伦比亚', 'CL': '智利', 'PE': '秘鲁', 'UA': '乌克兰', 'CZ': '捷克',
+  'HU': '匈牙利', 'RO': '罗马尼亚', 'BG': '保加利亚', 'HR': '克罗地亚', 'RS': '塞尔维亚',
+  'SK': '斯洛伐克', 'SI': '斯洛文尼亚', 'LT': '立陶宛', 'LV': '拉脱维亚', 'EE': '爱沙尼亚',
+  'IS': '冰岛', 'LU': '卢森堡', 'MT': '马耳他', 'CY': '塞浦路斯', 'QA': '卡塔尔',
+  'KW': '科威特', 'BH': '巴林', 'OM': '阿曼', 'JO': '约旦', 'LB': '黎巴嫩',
+  'IR': '伊朗', 'IQ': '伊拉克', 'PK': '巴基斯坦', 'BD': '孟加拉国', 'LK': '斯里兰卡',
+  'NP': '尼泊尔', 'MM': '缅甸', 'KH': '柬埔寨', 'LA': '老挝', 'BD': '文莱',
+  'TT': '特立尼达和多巴哥', 'XX': '未知/未分类', 'ZZ': '未知/未分类',
+  // English
+  'US_EN': 'United States', 'CN_EN': 'China', 'JP_EN': 'Japan', 'KR_EN': 'South Korea',
+};
+
+function countryName(code){
+  if (!code || code === 'ZZ' || code === 'XX') return LANG === 'zh' ? '未知/未分类' : 'Unknown';
+  if (LANG === 'zh') return COUNTRY_NAMES[code] || code;
+  return COUNTRY_NAMES[code + '_EN'] || code;
+}
+
+async function loadGlobal(){
+  const days = globalDays || 30;
+  const v = $('#view');
+  v.innerHTML = `<div class="glass section" style="padding:24px"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px"><div><h2 style="margin:0;font-size:18px">${esc(t('globalTitle'))}</h2><div style="color:var(--text-3);font-size:12.5px;margin-top:4px">${esc(t('globalSub'))}</div></div><div style="display:flex;gap:8px;align-items:center"><span style="color:var(--text-3);font-size:13px">${esc(t('globalDays'))}</span><select id="g-days" class="sel">${[7,14,30,90,365].map(d=>`<option value="${d}"${d===days?' selected':''}>${d}${LANG==='zh'?' 天':'d'}</option>`).join('')}</select></div></div><div id="globe" style="width:100%;height:520px;border-radius:16px;background:linear-gradient(135deg,#0a0d20 0%,#0f1629 100%)"></div><div id="global-totals" style="display:flex;gap:16px;margin-top:16px"></div><div id="global-table-wrap" style="margin-top:16px"></div></div>`;
+  $('#g-days').onchange = e => { globalDays = Number(e.target.value); loadGlobal(); };
+
+  const data = await api('/api/admin/global/stats?since_days=' + days);
+  const countries = data.countries || [];
+
+  // 概览统计
+  $('#global-totals').innerHTML = `
+    <div class="stat-card glass" style="flex:1"><div class="label">${esc(t('globalTotalDownloads'))}</div><div class="value">${data.totals?.downloads ?? 0}</div></div>
+    <div class="stat-card glass" style="flex:1"><div class="label">${esc(t('globalTotalBytes'))}</div><div class="value">${fmtSize(data.totals?.bytes ?? 0)}</div></div>
+    <div class="stat-card glass" style="flex:1"><div class="label">${esc(t('globalCountries'))}</div><div class="value">${data.totals?.countries_seen ?? 0}</div></div>
+  `;
+
+  // 空数据提示
+  if (!countries.length) {
+    $('#globe').innerHTML = `<div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--text-3);font-size:14px">${esc(t('globalEmpty'))}</div>`;
+    $('#global-table-wrap').innerHTML = `<div class="empty"><div class="icon">🌍</div>${esc(t('globalEmpty'))}</div>`;
+    return;
+  }
+
+  // 加载 ECharts
+  try {
+    await ensureECharts();
+  } catch (err) {
+    $('#globe').innerHTML = `<div style="height:100%;display:flex;align-items:center;justify-content:center;color:#ef4444;font-size:14px">Failed to load chart library</div>`;
+    return;
+  }
+
+  // 注册世界地图（echarts-gl 需要 world GeoJSON）
+  try { echarts.registerMap('world', window.WORLD_ATLAS || null); } catch(e) {}
+
+  // 准备 ECharts data：[{name: countryName, value: [lng, lat, downloads, bytes]}]
+  // 从 cf-ipcountry 的国家代码 → 大致经纬度（粗略定位）
+  const approxGeo = {
+    'US': [-97, 38], 'CN': [104, 35], 'JP': [138, 36], 'KR': [127, 36], 'GB': [-2, 54], 'DE': [10, 51],
+    'FR': [2, 46], 'CA': [-106, 56], 'AU': [134, -25], 'BR': [-52, -15], 'IN': [78, 22], 'RU': [90, 62],
+    'IT': [12, 42], 'ES': [-4, 40], 'NL': [5, 52], 'PL': [20, 52], 'TR': [35, 39], 'MX': [-102, 23],
+    'AR': [-64, -34], 'ZA': [25, -29], 'SG': [104, 1], 'HK': [114, 22], 'TW': [121, 24], 'TH': [101, 15],
+    'VN': [108, 16], 'ID': [113, -1], 'PH': [121, 12], 'MY': [101, 3], 'NZ': [174, -41], 'SE': [18, 62],
+    'NO': [8, 61], 'FI': [26, 64], 'DK': [10, 56], 'CH': [8, 46], 'AT': [14, 48], 'BE': [5, 50],
+    'IE': [-8, 53], 'PT': [-8, 39], 'GR': [22, 40], 'IL': [35, 31], 'AE': [54, 24], 'SA': [45, 24],
+    'EG': [30, 26], 'NG': [8, 10], 'KE': [38, -1], 'CO': [-72, 4], 'CL': [-71, -30], 'PE': [-76, -10],
+    'UA': [32, 49], 'CZ': [16, 49], 'HU': [19, 47], 'RO': [25, 46], 'BG': [25, 42], 'HR': [16, 45],
+    'RS': [21, 44], 'SK': [19, 49], 'SI': [14, 46], 'LT': [24, 55], 'LV': [24, 56], 'EE': [26, 58],
+    'IS': [-18, 64], 'LU': [6, 49], 'QA': [51, 25], 'KW': [47, 29], 'PK': [70, 30], 'BD': [90, 24],
+    'LK': [81, 7], 'MM': [95, 21], 'KH': [105, 12], 'ZZ': [0, 0], 'XX': [0, 0],
+  };
+  const maxDownloads = Math.max(...countries.map(c => c.downloads), 1);
+  const globeData = countries.map(c => {
+    const geo = approxGeo[c.country] || [0, 0];
+    return {
+      name: countryName(c.country),
+      value: [...geo, c.downloads, c.bytes],
+      downloads: c.downloads,
+      bytes: c.bytes,
+      unique_ips: c.unique_ips,
+      unique_files: c.unique_files,
+    };
+  });
+
+  const chart = echarts.init($('#globe'));
+  chart.setOption({
+    backgroundColor: 'transparent',
+    tooltip: {
+      trigger: 'item',
+      backgroundColor: 'rgba(15,22,41,0.92)',
+      borderColor: 'rgba(99,179,237,0.4)',
+      borderWidth: 1,
+      textStyle: { color: '#e2e8f0', fontSize: 13 },
+      formatter: (p) => {
+        if (p.componentType === 'series') {
+          const d = p.data;
+          return `<div style="font-weight:600;margin-bottom:6px">${d.name}</div>
+            <div>${esc(t('globalDownloads'))}: <b>${d.downloads}</b></div>
+            <div>${esc(t('globalBytes'))}: <b>${fmtSize(d.bytes)}</b></div>
+            <div>${esc(t('globalUniqueIps'))}: <b>${d.unique_ips}</b></div>`;
+        }
+        return p.name;
+      }
+    },
+    visualMap: {
+      min: 1, max: maxDownloads,
+      left: 16, bottom: 40,
+      text: [LANG==='zh'?'高':'High', LANG==='zh'?'低':'Low'],
+      calculable: true,
+      inRange: { color: ['#1e3a5f', '#2563eb', '#3b82f6', '#60a5fa', '#93c5fd', '#dbeafe'] },
+      textStyle: { color: '#94a3b8' }
+    },
+    series: [{
+      type: 'map',
+      map: 'world',
+      name: LANG==='zh'?'下载分布':'Downloads',
+      roam: true,
+      zoom: 1.2,
+      scaleLimit: { min: 0.8, max: 4 },
+      label: { show: false },
+      itemStyle: {
+        areaColor: '#1e293b',
+        borderColor: '#334155',
+        borderWidth: 0.5,
+      },
+      emphasis: {
+        label: { show: true, color: '#f1f5f9' },
+        itemStyle: { areaColor: '#0ea5e9', borderColor: '#38bdf8', borderWidth: 1 }
+      },
+      data: globeData.map(d => ({ name: d.name, value: d.downloads, ...d })),
+    },{
+      type: 'scatter',
+      coordinateSystem: 'geo',
+      name: LANG==='zh'?'热点':'Hotspots',
+      symbolSize: (val) => Math.max(4, Math.min(30, Math.sqrt(val[2] / maxDownloads) * 30)),
+      itemStyle: { color: '#0ea5e9', shadowBlur: 10, shadowColor: '#0ea5e9' },
+      data: globeData.map(d => ({ name: d.name, value: d.value, ...d })),
+    }],
+    geo: {
+      map: 'world',
+      roam: true,
+      zoom: 1.2,
+      scaleLimit: { min: 0.8, max: 4 },
+      itemStyle: { areaColor: '#1e293b', borderColor: '#334155' },
+      emphasis: { itemStyle: { areaColor: '#0ea5e9' } },
+    }
+  });
+  // resize handler
+  globeChart = chart;
+  window.addEventListener('resize', () => chart.resize());
+
+  // 国家排行表格
+  const rows = countries.slice(0, 20).map(c => {
+    const pct = Math.round((c.downloads / maxDownloads) * 100);
+    return `<tr>
+      <td>${countryName(c.country)} <span style="color:var(--text-3);font-size:11px">${c.country}</span></td>
+      <td class="num">${c.downloads}</td>
+      <td class="num">${fmtSize(c.bytes)}</td>
+      <td class="num">${c.unique_ips}</td>
+      <td><div class="progress"><i style="width:${pct}%;background:linear-gradient(90deg,#2563eb,#60a5fa)"></i></div></td>
+    </tr>`;
+  }).join('');
+  $('#global-table-wrap').innerHTML = `
+    <div class="glass section" style="padding:20px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <h3 style="margin:0;font-size:14px;color:var(--text-2)">${LANG==='zh'?'国家/地区排行 · Top 20':'Top 20 Countries'}</h3>
+        <span style="color:var(--text-3);font-size:12px">${esc(t('globalGeoSource'))}</span>
+      </div>
+      <table class="tbl">
+        <thead><tr>
+          <th>${esc(t('globalCountry'))}</th>
+          <th>${esc(t('globalDownloads'))}</th>
+          <th>${esc(t('globalBytes'))}</th>
+          <th>${esc(t('globalUniqueIps'))}</th>
+          <th>%</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+/* ═══════════ 激活码管理 ═══════════ */
+let codesPage = 1;
+let codesStatus = '';
+let codesBatchId = '';
+let codesPlan = '';
+let codesQ = '';
+
+async function loadCodes(){
+  const [usage, batches] = await Promise.all([
+    api('/api/admin/codes/usage'),
+    api('/api/admin/codes/batches').catch(() => ({batches: []})),
+  ]);
+  const sum = usage.summary || {};
+  const batchesList = usage.batches || [];
+  const batchOptions = (batches.batches || batchesList.map(b => ({batch_id: b.batch_id, count: b.n || b.count})));
+  const plans = [...new Set(batchOptions.map(b => b.batch_id))];
+
+  const totalCodes = sum.total || 0;
+  const usedCodes = (sum.active||0) + (sum.exhausted||0) + (sum.expired||0);
+  const totalTrafficGB = ((sum.total_bytes||0) / 1024 / 1024 / 1024).toFixed(2);
+  const usedTrafficGB = ((sum.used_bytes||0) / 1024 / 1024 / 1024).toFixed(2);
+  const trafficPct = sum.total_bytes > 0 ? Math.round((sum.used_bytes / sum.total_bytes) * 100) : 0;
+
+  const v = $('#view');
+  v.innerHTML = `
+    <div class="glass section">
+      <div class="section-title">
+        <h2>🎟️ ${esc(t('codesTitle'))}</h2>
+      </div>
+      <div class="sub" style="color:var(--text-2);font-size:13px;margin-bottom:14px">${esc(t('codesSub'))}</div>
+
+      <!-- 用量概览 -->
+      <div class="stats-row" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:18px">
+        <div class="stat-box" style="background:rgba(255,255,255,.06);border-radius:14px;padding:14px;border:1px solid var(--stroke)">
+          <div style="color:var(--text-3);font-size:12px">${esc(t('codesColCode'))} / Total</div>
+          <div style="font-size:22px;font-weight:700;margin-top:4px">${totalCodes}</div>
+        </div>
+        <div class="stat-box" style="background:rgba(255,255,255,.06);border-radius:14px;padding:14px;border:1px solid var(--stroke)">
+          <div style="color:var(--text-3);font-size:12px">${esc(t('codesStatusUnused'))}</div>
+          <div style="font-size:22px;font-weight:700;margin-top:4px;color:#34d399">${sum.unused||0}</div>
+        </div>
+        <div class="stat-box" style="background:rgba(255,255,255,.06);border-radius:14px;padding:14px;border:1px solid var(--stroke)">
+          <div style="color:var(--text-3);font-size:12px">${esc(t('codesStatusActive'))}</div>
+          <div style="font-size:22px;font-weight:700;margin-top:4px;color:#60a5fa">${sum.active||0}</div>
+        </div>
+        <div class="stat-box" style="background:rgba(255,255,255,.06);border-radius:14px;padding:14px;border:1px solid var(--stroke)">
+          <div style="color:var(--text-3);font-size:12px">${esc(t('codesColTraffic'))}</div>
+          <div style="font-size:18px;font-weight:700;margin-top:4px">${usedTrafficGB} / ${totalTrafficGB} GB</div>
+          <div style="margin-top:6px;height:4px;background:var(--track-bg);border-radius:2px;overflow:hidden">
+            <div style="height:100%;width:${trafficPct}%;background:linear-gradient(90deg,#34d399,#60a5fa);border-radius:2px"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 批量生成 -->
+    <div class="glass section">
+      <div class="section-title">
+        <h2>⚡ ${esc(t('codesGenerateTitle'))}</h2>
+      </div>
+      <div id="codes-gen-form" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px">
+        <div class="field" style="margin:0">
+          <label>${esc(t('codesCount'))}</label>
+          <input type="number" id="cg-count" min="1" max="10000" value="100">
+        </div>
+        <div class="field" style="margin:0">
+          <label>${esc(t('codesTraffic'))}</label>
+          <input type="number" id="cg-traffic" min="0" value="10">
+        </div>
+        <div class="field" style="margin:0">
+          <label>${esc(t('codesDays'))}</label>
+          <input type="number" id="cg-days" min="0" value="30">
+        </div>
+        <div class="field" style="margin:0">
+          <label>${esc(t('codesPlanName'))}</label>
+          <input type="text" id="cg-plan" placeholder="Pro / Basic / ...">
+        </div>
+        <div class="field" style="margin:0">
+          <label>${esc(t('codesNotes'))}</label>
+          <input type="text" id="cg-notes" placeholder="">
+        </div>
+        <div class="field" style="margin:0">
+          <label>${esc(t('codesQuotaMsg'))}</label>
+          <input type="text" id="cg-msg" placeholder="">
+        </div>
+      </div>
+      <div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap">
+        <button class="btn primary" id="cg-do">${esc(t('codesGenerate'))}</button>
+      </div>
+      <div id="cg-preview" style="margin-top:14px"></div>
+    </div>
+
+    <!-- 列表 -->
+    <div class="glass section">
+      <div class="section-title">
+        <h2>📋 ${esc(t('codesListTitle'))} <span id="codes-total-count" style="color:var(--text-3);font-weight:400;font-size:13px"></span></h2>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <select id="cf-status" style="padding:8px 12px;border-radius:10px;background:var(--sf-input);border:1px solid var(--stroke-strong);color:var(--text);font-size:13px;font-family:inherit;outline:none">
+            <option value="">${esc(t('codesFilterAll'))} ${esc(t('codesFilterStatus'))}</option>
+            <option value="unused">${esc(t('codesStatusUnused'))}</option>
+            <option value="active">${esc(t('codesStatusActive'))}</option>
+            <option value="expired">${esc(t('codesStatusExpired'))}</option>
+            <option value="exhausted">${esc(t('codesStatusExhausted'))}</option>
+            <option value="revoked">${esc(t('codesStatusRevoked'))}</option>
+          </select>
+          <select id="cf-batch" style="padding:8px 12px;border-radius:10px;background:var(--sf-input);border:1px solid var(--stroke-strong);color:var(--text);font-size:13px;font-family:inherit;outline:none">
+            <option value="">${esc(t('codesFilterAll'))} ${esc(t('codesFilterBatch'))}</option>
+            ${batchOptions.map(b => `<option value="${esc(b.batch_id)}">${esc(b.batch_id)} (${b.count||b.n||0})</option>`).join('')}
+          </select>
+          <input type="text" id="cf-q" placeholder="${esc(t('codesFilterQ'))}" value="${esc(codesQ)}" style="padding:8px 12px;border-radius:10px;background:var(--sf-input);border:1px solid var(--stroke-strong);color:var(--text);font-size:13px;font-family:inherit;outline:none;width:180px">
+          <button class="btn sm" id="cf-export">${esc(t('codesExportCsv'))}</button>
+          <button class="btn sm danger" id="cf-revoke-batch">${esc(t('codesRevokeBatch'))}</button>
+        </div>
+      </div>
+      <div id="codes-table"></div>
+      <div id="codes-pg" style="margin-top:14px;display:flex;justify-content:center;gap:10px"></div>
+    </div>
+  `;
+
+  // 生成按钮
+  $('#cg-do').onclick = async () => {
+    const count = Math.max(1, Math.min(10000, Number($('#cg-count').value) || 100));
+    const traffic = Math.max(0, Number($('#cg-traffic').value) || 0);
+    const days = Math.max(0, Number($('#cg-days').value) || 0);
+    if (traffic === 0 && days === 0) { toast('Set at least traffic OR days', 'err'); return; }
+    try {
+      const r = await api('/api/admin/codes/generate', { method:'POST', body: JSON.stringify({
+        count, traffic_bytes: traffic * 1024 * 1024 * 1024, days_valid: days,
+        plan_name: $('#cg-plan').value.trim() || undefined,
+        quota_message: $('#cg-msg').value.trim() || undefined,
+        notes: $('#cg-notes').value.trim() || undefined,
+      })});
+      toast(t('codesGeneratedN', {n: r.count}));
+      const preview = r.codes || [];
+      $('#cg-preview').innerHTML = `
+        <div style="color:var(--text-3);font-size:12px;margin-bottom:6px">${esc(t('codesGeneratedPreview'))}</div>
+        <div style="background:rgba(0,0,0,.3);border-radius:12px;padding:12px;font-family:ui-monospace,'SF Mono',monospace;font-size:12px;color:#fde68a;line-height:1.7;max-height:200px;overflow:auto">
+          ${preview.map(c => `<div>${esc(c)}</div>`).join('')}
+        </div>
+      `;
+      codesPage = 1;
+      loadCodesList();
+    } catch(err) { toast(err.message, 'err'); }
+  };
+
+  // 过滤器
+  $('#cf-status').onchange = () => { codesStatus = $('#cf-status').value; codesPage = 1; loadCodesList(); };
+  $('#cf-batch').onchange = () => { codesBatchId = $('#cf-batch').value; codesPage = 1; loadCodesList(); };
+  $('#cf-q').addEventListener('input', (e) => {
+    clearTimeout(window.__codesQ_t);
+    window.__codesQ_t = setTimeout(() => { codesQ = e.target.value.trim(); codesPage = 1; loadCodesList(); }, 300);
+  });
+
+  // CSV 导出
+  $('#cf-export').onclick = () => {
+    const sp = new URLSearchParams();
+    sp.set('export', '1');
+    if (codesStatus) sp.set('status', codesStatus);
+    if (codesBatchId) sp.set('batch_id', codesBatchId);
+    if (codesQ) sp.set('q', codesQ);
+    location.href = '/api/admin/codes?' + sp.toString();
+  };
+
+  // 按批次作废
+  $('#cf-revoke-batch').onclick = async () => {
+    if (!codesBatchId) { toast('Select a batch first', 'err'); return; }
+    if (!(await confirmDialog(t('codesConfirmRevokeT'), t('codesConfirmRevokeD') + ' Batch: ' + codesBatchId, true))) return;
+    try {
+      const r = await api('/api/admin/codes/batch-revoke', { method:'POST', body: JSON.stringify({ batch_id: codesBatchId }) });
+      toast(t('codesBatchRevokeOk', {n: r.updated || r.count || 0}));
+      loadCodes();
+    } catch(err) { toast(err.message, 'err'); }
+  };
+
+  // 自动选中第一个有效批次（如果还没选），让"按批次作废"等操作立即可用
+  if (!codesBatchId && batchOptions.length > 0) {
+    codesBatchId = batchOptions[0].batch_id;
+    const sel = $('#cf-batch');
+    if (sel) sel.value = codesBatchId;
+  }
+
+  loadCodesList();
+}
+
+async function loadCodesList(){
+  const params = new URLSearchParams();
+  params.set('page', codesPage);
+  params.set('size', 50);
+  if (codesStatus) params.set('status', codesStatus);
+  if (codesBatchId) params.set('batch_id', codesBatchId);
+  if (codesPlan) params.set('plan', codesPlan);
+  if (codesQ) params.set('q', codesQ);
+  try {
+    const d = await api('/api/admin/codes?' + params.toString());
+    $('#codes-total-count').textContent = `(${d.total})`;
+    if (!d.rows || !d.rows.length) {
+      $('#codes-table').innerHTML = `<div class="empty"><div class="icon">🎟️</div>${esc(t('codesNoCodes'))}</div>`;
+      $('#codes-pg').innerHTML = '';
+      return;
+    }
+    const statusLabel = { unused: t('codesStatusUnused'), active: t('codesStatusActive'), expired: t('codesStatusExpired'), exhausted: t('codesStatusExhausted'), revoked: t('codesStatusRevoked') };
+    const statusColor = { unused: '#9aa4b2', active: '#60a5fa', expired: '#fbbf24', exhausted: '#f87171', revoked: '#a3a3a3' };
+    $('#codes-table').innerHTML = `
+      <div style="overflow-x:auto">
+      <table class="admin-table" style="width:100%;border-collapse:separate;border-spacing:0;font-size:13px">
+        <thead>
+          <tr style="text-align:left;color:var(--text-2);border-bottom:1px solid var(--stroke)">
+            <th style="padding:10px 8px">${esc(t('codesColCode'))}</th>
+            <th style="padding:10px 8px">${esc(t('codesColPlan'))}</th>
+            <th style="padding:10px 8px">${esc(t('codesColBatch'))}</th>
+            <th style="padding:10px 8px">${esc(t('codesColTraffic'))}</th>
+            <th style="padding:10px 8px">${esc(t('codesColStatus'))}</th>
+            <th style="padding:10px 8px">${esc(t('codesColActivated'))}</th>
+            <th style="padding:10px 8px">${esc(t('codesColActions'))}</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${d.rows.map(r => {
+            const trafficGB = r.traffic_bytes > 0 ? (r.traffic_bytes / 1024 / 1024 / 1024).toFixed(2) + ' GB' : (r.days_valid > 0 ? t('codesUnlimited') : t('codesRemainingInfinite'));
+            const usedGB = r.used_bytes > 0 ? (r.used_bytes / 1024 / 1024 / 1024).toFixed(2) + ' GB' : '0';
+            const pct = r.pct || 0;
+            return `<tr style="border-bottom:1px solid rgba(255,255,255,.06)">
+              <td style="padding:10px 8px;font-family:ui-monospace,'SF Mono',monospace;color:#fde68a">${esc(r.code)}</td>
+              <td style="padding:10px 8px;color:var(--text-2)">${esc(r.plan_id||'—')}</td>
+              <td style="padding:10px 8px;color:var(--text-2)">${esc(r.batch_id||'—')}</td>
+              <td style="padding:10px 8px">
+                <div>${usedGB} / ${trafficGB}</div>
+                ${r.traffic_bytes > 0 ? `<div style="margin-top:4px;height:3px;background:var(--track-bg);border-radius:2px;overflow:hidden"><div style="height:100%;width:${pct}%;background:linear-gradient(90deg,#34d399,#60a5fa);border-radius:2px"></div></div>` : ''}
+              </td>
+              <td style="padding:10px 8px"><span style="color:${statusColor[r.status]||'#fff'}">${esc(statusLabel[r.status]||r.status)}</span></td>
+              <td style="padding:10px 8px;color:var(--text-2)">${fmtTime(r.activated_at)}</td>
+              <td style="padding:10px 8px">
+                <button class="btn sm" data-query="${esc(r.code)}">${esc(t('codesQueryRemainBtn'))}</button>
+                ${r.status !== 'revoked' ? `<button class="btn sm danger" data-revoke="${esc(r.id)}">${esc(t('codesRevokeOne'))}</button>` : ''}
+              </td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+      </div>
+    `;
+
+    // 行事件
+    $$('#codes-table [data-revoke]').forEach(btn => btn.onclick = async () => {
+      if (!(await confirmDialog(t('codesConfirmRevokeT'), t('codesConfirmRevokeD'), true))) return;
+      try {
+        await api('/api/admin/codes/' + btn.dataset.revoke + '/revoke', { method:'POST' });
+        toast('OK');
+        loadCodesList();
+      } catch(err) { toast(err.message, 'err'); }
+    });
+    $$('#codes-table [data-query]').forEach(btn => btn.onclick = async () => {
+      try {
+        const r = await fetch('/api/codes/status?code=' + encodeURIComponent(btn.dataset.query));
+        const d = await r.json();
+        if (!r.ok) { toast(d.message || t('codesQueryNotFound'), 'err'); return; }
+        const rem = d.status.remaining;
+        const total = d.status.total;
+        if (rem === -1) toast(t('codesQueryResultInfinite'));
+        else toast(t('codesQueryResult', { remaining: fmtSize(rem), total: total > 0 ? fmtSize(total) : '∞' }));
+      } catch(err) { toast(err.message, 'err'); }
+    });
+
+    // 分页
+    const pages = Math.ceil(d.total / d.page_size);
+    $('#codes-pg').innerHTML = pages > 1 ? `
+      <button class="btn sm" ${d.page<=1?'disabled':''} id="pg-prev">${esc(t('prev'))}</button>
+      <span style="font-size:13px;color:var(--text-2);align-self:center">${esc(t('pageOf', {a: d.page, b: pages}))}</span>
+      <button class="btn sm" ${d.page>=pages?'disabled':''} id="pg-next">${esc(t('next'))}</button>
+    ` : '';
+    $('#pg-prev')?.addEventListener('click', () => { codesPage--; loadCodesList(); });
+    $('#pg-next')?.addEventListener('click', () => { codesPage++; loadCodesList(); });
+  } catch(err) { toast(err.message, 'err'); }
+}
+
+/* ═══════════ WebDAV ═══════════ */
+async function loadWebDAV(){
+  const s = await api('/api/admin/settings');
+  const v = $('#view');
+  v.innerHTML = `
+    <div class="glass section">
+      <div class="section-title">
+        <h2>🗂️ ${esc(t('webdavGroupTitle'))}</h2>
+      </div>
+      <div class="sub" style="color:var(--text-2);font-size:13px;margin-bottom:14px">${esc(t('webdavGroupD'))}</div>
+
+      <!-- 状态概览 -->
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-bottom:18px">
+        <div style="background:var(--sf-soft);border-radius:14px;padding:14px;border:1px solid var(--stroke)">
+          <div style="color:var(--text-3);font-size:12px">${esc(t('webdavEnable'))}</div>
+          <div style="font-size:18px;font-weight:600;margin-top:4px;color:${s.webdav_enabled ? '#16a34a' : '#9ca3af'}">${s.webdav_enabled ? (LANG==='zh'?'已启用':'Enabled') : (LANG==='zh'?'未启用':'Disabled')}</div>
+        </div>
+        <div style="background:var(--sf-soft);border-radius:14px;padding:14px;border:1px solid var(--stroke)">
+          <div style="color:var(--text-3);font-size:12px">${esc(t('webdavUsername'))}</div>
+          <div style="font-size:18px;font-weight:600;margin-top:4px">${esc(s.webdav_username || 'webdav')}</div>
+        </div>
+        <div style="background:var(--sf-soft);border-radius:14px;padding:14px;border:1px solid var(--stroke)">
+          <div style="color:var(--text-3);font-size:12px">${esc(t('webdavPassword'))}</div>
+          <div style="font-size:18px;font-weight:600;margin-top:4px;color:${s.webdav_password_configured ? '#16a34a' : '#d97706'}">${s.webdav_password_configured ? '✓ ' + esc(t('webdavPasswordSet')) : '⚠ ' + esc(t('webdavPasswordUnset'))}</div>
+        </div>
+        <div style="background:var(--sf-soft);border-radius:14px;padding:14px;border:1px solid var(--stroke)">
+          <div style="color:var(--text-3);font-size:12px">${esc(t('webdavRootPath'))}</div>
+          <div style="font-size:18px;font-weight:600;margin-top:4px;font-family:ui-monospace,'SF Mono',monospace">${esc(s.webdav_root_path || '/')}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 配置卡片 -->
+    <div class="glass section">
+      <h3 style="margin:0 0 4px;font-size:15px;font-weight:600">${esc(t('webdavGroupTitle'))}</h3>
+      <div style="color:var(--text-3);font-size:12.5px;margin-bottom:14px">${esc(t('webdavGroupD'))}</div>
+
+      <div class="row" style="padding:14px 0;border:none;border-bottom:1px solid var(--stroke);display:flex;align-items:center;justify-content:space-between;gap:12px">
+        <div class="info" style="flex:1;min-width:0">
+          <div class="t" style="font-size:14.5px;font-weight:600">${esc(t('webdavEnable'))}</div>
+          <div class="d" style="margin-top:3px;font-size:12.5px;color:var(--text-3);line-height:1.5">${LANG==='zh'?'开启后，可通过 WebDAV 客户端访问以下地址':'Once enabled, connect to the URL below from any WebDAV client'}</div>
+        </div>
+        <label class="switch" style="flex:none">
+          <input type="checkbox" id="wd-enable" ${s.webdav_enabled?'checked':''}>
+          <span class="track"><span class="thumb"></span></span>
+        </label>
+      </div>
+
+      <div class="row" style="padding:14px 0;border:none;border-bottom:1px solid var(--stroke);display:flex;align-items:center;justify-content:space-between;gap:12px">
+        <div class="info" style="flex:1;min-width:0">
+          <div class="t" style="font-size:14.5px;font-weight:600">${esc(t('webdavUsername'))}</div>
+        </div>
+        <input type="text" id="wd-username" value="${esc(s.webdav_username ?? 'webdav')}" style="width:200px;padding:9px 14px;border-radius:12px;background:var(--sf-input);border:1px solid var(--stroke-strong);color:var(--text);font-size:14px;font-family:inherit;outline:none">
+      </div>
+
+      <div class="row" style="padding:14px 0;border:none;border-bottom:1px solid var(--stroke);display:flex;align-items:center;justify-content:space-between;gap:12px">
+        <div class="info" style="flex:1;min-width:0">
+          <div class="t" style="font-size:14.5px;font-weight:600">${esc(t('webdavPassword'))}</div>
+          <div class="d" style="margin-top:3px;font-size:12.5px;color:var(--text-3);line-height:1.5">${s.webdav_password_configured ? '<span style="color:#16a34a">✓ '+esc(t('webdavPasswordSet'))+'</span>' : '<span style="color:#d97706">⚠ '+esc(t('webdavPasswordUnset'))+'</span>'}</div>
+        </div>
+        <input type="password" id="wd-password" value="" placeholder="${esc(t('webdavPasswordPh'))}" style="width:220px;padding:9px 14px;border-radius:12px;background:var(--sf-input);border:1px solid var(--stroke-strong);color:var(--text);font-size:14px;font-family:ui-monospace,'SF Mono',monospace;outline:none">
+      </div>
+
+      <div class="row" style="padding:14px 0;border:none;display:flex;align-items:center;justify-content:space-between;gap:12px">
+        <div class="info" style="flex:1;min-width:0">
+          <div class="t" style="font-size:14.5px;font-weight:600">${esc(t('webdavRootPath'))}</div>
+          <div class="d" style="margin-top:3px;font-size:12.5px;color:var(--text-3);line-height:1.5">${esc(t('webdavRootPathHelp'))}</div>
+        </div>
+        <input type="text" id="wd-root" value="${esc(s.webdav_root_path ?? '/')}" style="width:200px;padding:9px 14px;border-radius:12px;background:var(--sf-input);border:1px solid var(--stroke-strong);color:var(--text);font-size:14px;font-family:ui-monospace,'SF Mono',monospace;outline:none">
+      </div>
+    </div>
+
+    <!-- WebDAV 地址 -->
+    <div class="glass section">
+      <h3 style="margin:0 0 4px;font-size:15px;font-weight:600">${esc(t('webdavUrl'))}</h3>
+      <div style="color:var(--text-3);font-size:12.5px;margin-bottom:14px">${esc(t('webdavUrlHint'))}</div>
+      <div style="padding:14px 16px;border-radius:14px;background:var(--sf-soft);border:1px solid var(--stroke);font-family:ui-monospace,'SF Mono',monospace;font-size:13px;color:var(--blue);word-break:break-all;cursor:pointer" onclick="this.select()">${esc(window.location.origin)}/webdav${s.webdav_root_path && s.webdav_root_path !== '/' ? esc(s.webdav_root_path) : ''}/</div>
+    </div>
+
+    <!-- 保存按钮 -->
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:4px">
+      <button class="btn" id="wd-clear" style="padding:12px 22px;font-size:14px;border-radius:14px">${esc(t('webdavPasswordClear'))}</button>
+      <button class="btn primary" id="wd-save" style="padding:12px 28px;font-size:14px;border-radius:14px">${esc(t('save'))}</button>
+    </div>
+  `;
+
+  // 清除密码按钮
+  $('#wd-clear')?.addEventListener('click', async () => {
+    if (!(await confirmDialog(
+      LANG==='zh'?'确认清除密码？':'Clear password?',
+      LANG==='zh'?'清除后，下次保存时需要重新输入密码才能保护 WebDAV。':'After clearing, you must set a new password on the next save to protect WebDAV.'
+    ))) return;
+    await api('/api/admin/settings', {
+      method: 'PUT',
+      body: JSON.stringify({ webdav_password: '__clear__' }),
+    });
+    toast(LANG==='zh'?'密码已清除':'Password cleared', 'ok');
+    loadWebDAV();
+  });
+
+  // 保存按钮
+  $('#wd-save')?.addEventListener('click', async () => {
+    const body = {
+      webdav_enabled: $('#wd-enable').checked,
+      webdav_username: $('#wd-username').value.trim(),
+      webdav_root_path: $('#wd-root').value.trim(),
+      webdav_password: $('#wd-password').value ? $('#wd-password').value : '__keep__',
+    };
+    await api('/api/admin/settings', { method:'PUT', body: JSON.stringify(body) });
+    toast(t('saved'));
+    loadWebDAV();
+  });
+}
+
+/* ═══════════ 设置 ═══════════ */
+async function loadSettings(){
+  const [s, twofaStatus, dbStatus] = await Promise.all([
+    api('/api/admin/settings'),
+    api('/api/admin/2fa/status').catch(() => ({enabled:false, cloudflare_recovery:false, recovery_remaining:0})),
+    api('/api/admin/db/status').catch(() => null),
+  ]);
+  $('#view').innerHTML = `
+    <div class="glass group">
+      <div class="row">
+        <div class="info"><div class="t">${esc(t('siteName'))}</div><div class="d">${esc(t('siteNameD'))}</div></div>
+        <input type="text" id="st-title" value="${esc(s.site_title)}">
+      </div>
+    </div>
+    <div class="glass group">
+      <div class="row">
+        <div class="info"><div class="t">📡 ${esc(t('trafficLimit'))}</div>
+        <div class="d">${esc(t('trafficLimitD',{used:fmtSize(s.traffic_used_bytes)}))}</div></div>
+        <input type="number" id="st-limit" min="0" step="0.1" value="${s.traffic_limit_gb}">
+      </div>
+      <div class="row">
+        <div class="info"><div class="t">♻️ ${esc(t('resetTraffic'))}</div><div class="d">${esc(t('resetTrafficD'))}</div></div>
+        <button class="btn sm" id="st-reset-traffic">${esc(t('reset'))}</button>
+      </div>
+    </div>
+    <div class="glass group">
+      <div class="row">
+        <div class="info"><div class="t">🔁 ${esc(t('perIp'))}</div>
+        <div class="d">${esc(t('perIpD'))}</div></div>
+        <input type="number" id="st-perip" min="0" value="${s.max_downloads_per_ip}">
+      </div>
+      <div class="row">
+        <div class="info"><div class="t">⏱️ ${esc(t('window'))}</div><div class="d">${esc(t('windowD'))}</div></div>
+        <input type="number" id="st-window" min="0" value="${s.count_window_hours}">
+      </div>
+      <div class="row">
+        <div class="info"><div class="t">🚫 ${esc(t('autoBan'))}</div><div class="d">${esc(t('autoBanD'))}</div></div>
+        <label class="switch"><input type="checkbox" id="st-autoban" ${s.auto_ban?'checked':''}><span class="track"><span class="thumb"></span></span></label>
+      </div>
+      <div class="row">
+        <div class="info"><div class="t">⏳ ${esc(t('banHours'))}</div><div class="d">${esc(t('banHoursD'))}</div></div>
+        <input type="number" id="st-banhours" min="0" value="${s.ban_hours}">
+      </div>
+    </div>
+    <div class="glass group">
+      <div class="row">
+        <div class="info"><div class="t">🧹 ${esc(t('clearLogs'))}</div><div class="d">${esc(t('clearLogsD'))}</div></div>
+        <div style="display:flex;gap:8px">
+          <button class="btn sm" id="st-clear-30">${esc(t('clear30'))}</button>
+          <button class="btn sm danger" id="st-clear-all">${esc(t('clearAll'))}</button>
+        </div>
+      </div>
+    </div>
+    <!-- IP 白名单 -->
+    <div class="glass group">
+      <div class="row" style="flex-direction:column;align-items:stretch;gap:10px">
+        <div class="info" style="margin-bottom:4px"><div class="t">🔒 ${esc(t('ipWhitelist'))}</div><div class="d">${esc(t('ipWhitelistD'))}</div></div>
+        <textarea id="st-adminips" rows="3" style="width:100%;padding:10px 12px;border-radius:12px;font-size:13px;color:var(--text);background:var(--sf-input);border:1px solid var(--stroke-strong);outline:none;font-family:ui-monospace,'SF Mono',monospace;resize:vertical" placeholder="${esc(t('ipWhitelistPh'))}">${esc(s.admin_ips ?? '')}</textarea>
+        <div class="tip" style="margin-top:4px;line-height:1.7">
+          <div>${s.admin_ips ? `<span style="color:#16a34a">${esc(t('ipWhitelistOn'))}</span>` : `<span style="color:#d97706">${esc(t('ipWhitelistOff'))}</span>`}</div>
+          <div>${esc(t('ipWhitelistHint'))}</div>
+        </div>
+      </div>
+    </div>
+    <!-- 下载市场作为首页 -->
+    <div class="glass group">
+      <div class="row">
+        <div class="info"><div class="t">🏪 ${esc(t('homeRedirectMarket'))}</div><div class="d">${esc(t('homeRedirectMarketD'))}</div></div>
+        <label class="switch">
+          <input type="checkbox" id="st-home-market" ${s.home_redirect_market ? 'checked' : ''}>
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div class="tip" style="margin-top:8px">${esc(t('homeRedirectMarketHint'))}</div>
+    </div>
+    <!-- 激活码浮动按钮组 -->
+    <div class="glass group">
+      <div class="row">
+        <div class="info"><div class="t">🎟️ ${esc(t('codesFloatingBtn'))}</div><div class="d">${esc(t('codesFloatingBtnD'))}</div></div>
+        <label class="switch">
+          <input type="checkbox" id="st-codes-float" ${s.codes_floating_button_enabled !== false ? 'checked' : ''}>
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div class="row">
+        <div class="info"><div class="t">${esc(t('codesFloatingBtnPosition'))}</div><div class="d">${esc(t('codesFloatingBtnHint'))}</div></div>
+        <select id="st-codes-pos" style="padding:9px 14px;border-radius:12px;background:var(--sf-input);border:1px solid var(--stroke-strong);color:var(--text);font-size:14px;font-family:inherit;outline:none;min-width:110px">
+          <option value="top-right" ${(s.codes_floating_button_position || 'top-right') === 'top-right' ? 'selected' : ''}>${esc(t('codesFloatingBtnPosRight'))}</option>
+          <option value="top-left" ${s.codes_floating_button_position === 'top-left' ? 'selected' : ''}>${esc(t('codesFloatingBtnPosLeft'))}</option>
+        </select>
+      </div>
+    </div>
+    <!-- 2FA 组 -->
+    <div class="glass group">
+      <div class="row">
+        <div class="info"><div class="t">🛡️ ${esc(t('twofa'))} ${twofaStatus.enabled ? `<span class="tag active" style="margin-left:6px"><i></i>${esc(t('twofaStatusOn'))}</span>` : `<span class="tag" style="margin-left:6px;background:var(--sf-input);color:#a5b4fc"><i></i>${esc(t('twofaStatusOff'))}</span>`}</div>
+        <div class="d">${esc(t('twofaD'))}</div></div>
+        <label class="switch" id="twofa-switch" style="${twofaStatus.enabled ? '' : 'opacity:.5;pointer-events:none'}">
+          <input type="checkbox" ${twofaStatus.enabled ? 'checked' : ''} disabled>
+          <span class="track"><span class="thumb"></span></span>
+        </label>
+      </div>
+      <div class="row" style="flex-direction:column;align-items:flex-start">
+        <div style="font-size:12.5px;color:var(--text-3);line-height:1.7">
+          ${twofaStatus.cloudflare_recovery ? `<span style="color:#6ee7b7">${esc(t('twofaHasCloudflareRecovery'))}</span>` : `<span>${esc(t('twofaNoCloudflareRecovery'))}</span>`}
+          ${twofaStatus.enabled ? ` · ${esc(t('twofaRecoveryRemaining',{n:twofaStatus.recovery_remaining}))}` : ''}
+        </div>
+      </div>
+      <div class="row" style="justify-content:flex-end">
+        ${twofaStatus.enabled
+          ? `<button class="btn sm danger" id="twofa-disable">${esc(t('twofaDisableT'))}</button>
+             <button class="btn sm" id="twofa-regen">${esc(t('twofaRegenT'))}</button>`
+          : `<button class="btn sm primary" id="twofa-setup">${esc(t('twofaSetupT'))}</button>`
+        }
+      </div>
+    </div>
+    <!-- Turnstile 组 —— 状态摘要 + 配置按钮 -->
+    <div class="glass group">
+      <div class="row">
+        <div class="info">
+          <div class="t">${esc(t('tsGroupTitle'))}</div>
+          <div class="d" style="font-size:12px;line-height:1.6">
+            <div>${esc(t('tsGroupD'))}</div>
+            <div style="margin-top:6px">
+              <span style="color:${s.turnstile_mode==='off'?'#a5b4fc':'#6ee7b7'}">${esc(t('tsMode'))}: ${s.turnstile_mode}</span>
+              · <span>${esc(t('tsThreshold'))}: ${s.turnstile_threshold ?? 5}</span>
+              · ${s.cloudflare_turnstile_secret ? `<span style="color:#6ee7b7">✓ ${esc(t('tsSecretOk'))}</span>` : `<span style="color:#fda293">⚠ ${esc(t('tsSecretMissing'))}</span>`}
+              · ${s.cloudflare_turnstile_sitekey ? `<span style="color:#6ee7b7">✓ Sitekey Cloudflare</span>` : (s.turnstile_sitekey_override ? `<span style="color:var(--blue)">✓ Sitekey Override</span>` : `<span style="color:#fde68a">⚠ Sitekey Missing</span>`)}
+            </div>
+          </div>
+        </div>
+        <button class="btn sm primary" id="ts-configure" style="padding:10px 22px;font-size:13px;border-radius:14px">⚙️ ${esc(t('configureTurnstile'))}</button>
+      </div>
+      <div class="row" style="justify-content:flex-end">
+        <button class="btn sm" id="ts-reset">${esc(t('tsResetVisits'))}</button>
+      </div>
+    </div>
+    <!-- OAuth2 组 —— 总开关 + Provider 卡片列表 -->
+    <div class="glass group">
+      <div class="row">
+        <div class="info"><div class="t">${esc(t('oauthGroupTitle'))}</div>
+          <div class="d" style="font-size:12px;line-height:1.6">
+            ${esc(t('oauthGroupD'))}
+            <div style="margin-top:6px">
+              ${s.oauth_enabled
+                ? (s.oauth_has_enabled_providers
+                    ? `<span style="color:#6ee7b7">✓ ${esc(t('oauthEnabledN',{n:s.oauth_providers?.length||0}))}</span>`
+                    : `<span style="color:#fda293">⚠ ${esc(t('oauthNoEnabled'))}</span>`)
+                : `<span style="color:#a5b4fc">${esc(t('oauthDisabled'))}</span>`}
+            </div>
+          </div>
+        </div>
+        <label class="switch"><input type="checkbox" id="oauth-enabled" ${s.oauth_enabled?'checked':''}><span class="track"><span class="thumb"></span></span></label>
+      </div>
+      <!-- Provider 卡片列表 -->
+      <div id="oauth-providers-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;margin-top:6px">
+        ${(s.oauth_providers && s.oauth_providers.length) ? s.oauth_providers.map(p => `
+          <div class="oauth-provider-card" data-oauth-id="${esc(p.id)}" style="padding:14px;border-radius:14px;background:var(--sf-soft);border:1px solid ${p.enabled ? 'rgba(110,231,183,.45)' : 'var(--stroke)'}">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+              <div style="font-weight:600;font-size:14px">${esc(p.label)} <span style="font-size:11px;color:var(--text-3);font-weight:400">${esc(p.provider_type)}</span></div>
+              <span class="tag ${p.enabled?'active':''}" style="font-size:11px"><i></i>${p.enabled ? esc(t('oauthEnabled')) : esc(t('oauthDisabled'))}</span>
+            </div>
+            <div style="font-size:11.5px;color:var(--text-3);line-height:1.6">
+              <div><b>Client ID:</b> ${esc(p.client_id || '—')}</div>
+              <div><b>Secret:</b> <span style="${p.secret_configured?'color:#6ee7b7':'color:#fda293'}">${p.secret_configured ? esc(t('oauthSecretConfigured')) : esc(t('oauthSecretNotConfigured'))}</span></div>
+              <div><b>Scope:</b> ${esc(p.scope || '—')}</div>
+            </div>
+            <div style="display:flex;gap:6px;margin-top:10px">
+              <button class="btn sm" data-oauth-config="${esc(p.id)}" style="flex:1;padding:6px 10px;font-size:12px;border-radius:10px">${esc(t('oauthConfigure'))}</button>
+              <button class="btn sm" data-oauth-toggle="${esc(p.id)}" style="padding:6px 10px;font-size:12px;border-radius:10px">${p.enabled ? esc(t('oauthDisable')) : esc(t('oauthEnable'))}</button>
+              <button class="btn sm danger" data-oauth-delete="${esc(p.id)}" style="padding:6px 10px;font-size:12px;border-radius:10px">🗑️</button>
+            </div>
+          </div>`).join('') : `<div style="grid-column:1/-1;text-align:center;color:var(--text-3);font-size:13px;padding:20px">${esc(t('oauthNoProviders'))}</div>`}
+      </div>
+      <div class="row" style="justify-content:flex-end;margin-top:10px">
+        <button class="btn primary" id="oauth-add" style="padding:10px 20px;font-size:13px;border-radius:14px">+ ${esc(t('oauthAddProvider'))}</button>
+      </div>
+    </div>
+    <!-- 存储后端 -->
+    <div class="glass group">
+      <div class="row" style="align-items:flex-start">
+        <div class="info" style="flex:1">
+          <div class="t">${esc(t('storageBackendTitle'))}</div>
+          <div class="d" style="font-size:12px;line-height:1.6;margin-top:2px">${esc(t('storageBackendD'))}</div>
+        </div>
+        <select id="st-backend" style="padding:9px 14px;border-radius:12px;background:var(--sf-input);border:1px solid var(--stroke-strong);color:var(--text);font-size:14px;font-family:inherit;outline:none;min-width:170px">
+          <option value="r2" ${(s.storage_provider||'r2')==='r2'?'selected':''}>${esc(t('storageBackendR2'))}</option>
+          <option value="s3" ${s.storage_provider==='s3'?'selected':''}>${esc(t('storageBackendS3'))}</option>
+          <option value="webdav" ${s.storage_provider==='webdav'?'selected':''}>${esc(t('storageBackendWebDAV'))}</option>
+        </select>
+      </div>
+      <div style="font-size:12px;line-height:1.7;margin-top:10px">
+        ${(s.storage_provider||'r2')==='webdav'
+          ? `<span style="${s.storage_webdav_url && s.storage_webdav_username && s.storage_webdav_password_configured ? 'color:#6ee7b7' : 'color:#fda293'}">`
+            + (s.storage_webdav_url && s.storage_webdav_username && s.storage_webdav_password_configured
+              ? `✓ WebDAV: ${esc(s.storage_webdav_url)} · ${esc(s.storage_webdav_username)}`
+              : `⚠ ${esc(t('storageBackendNotSet'))}`)
+            + `</span>`
+          : (s.storage_provider==='s3'
+              ? `<span style="${s.s3_endpoint && s.s3_bucket ? 'color:#6ee7b7' : 'color:#fda293'}">S3: ${esc(s.s3_endpoint||'')} / ${esc(s.s3_bucket||'')||'⚠ '+esc(t('storageBackendNotSet'))}</span>`
+              : `<span style="color:#6ee7b7">✓ ${esc(t('storageBackendR2'))}</span>`)}
+      </div>
+      <div class="row" style="justify-content:flex-end;margin-top:10px;gap:8px">
+        <button class="btn sm" id="st-backend-webdav-cfg" style="${(s.storage_provider||'r2')==='webdav' ? '' : 'opacity:.5'}">🔗 ${esc(t('storageBackendConfig'))} WebDAV</button>
+      </div>
+    </div>
+    <!-- 数据库健康 -->
+    <div class="glass group">
+      <div class="row" style="align-items:flex-start">
+        <div class="info" style="flex:1">
+          <div class="t">${esc(t('dbToolsTitle'))}</div>
+          <div class="d" style="font-size:12px;line-height:1.6;margin-top:2px">${esc(t('dbToolsD'))}</div>
+        </div>
+        ${dbStatus ? (dbStatus.healthy
+          ? `<span class="tag active"><i></i>${esc(t('dbHealthy'))}</span>`
+          : `<span class="tag" style="background:rgba(255,159,10,.16);color:#fcd34d"><i></i>${esc(t('dbNeedRepair'))}</span>`
+        ) : `<span class="tag" style="background:var(--sf-input);color:#a5b4fc"><i></i>—</span>`}
+      </div>
+      ${dbStatus ? `
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;margin-top:8px">
+          <div style="padding:10px 14px;border-radius:12px;background:var(--sf-soft);border:1px solid var(--stroke)">
+            <div style="font-size:11px;color:var(--text-3);margin-bottom:2px">${esc(t('dbTables'))}</div>
+            <div style="font-size:14px;font-weight:600">${esc(t('dbTablesOk',{a:dbStatus.tables.existing.length,b:dbStatus.tables.expected.length}))}</div>
+            ${dbStatus.tables.missing.length ? `<div style="font-size:11.5px;color:#fda293;margin-top:3px">${esc(t('dbStatusMissingTables'))}: ${dbStatus.tables.missing.join(', ')}</div>` : ''}
+          </div>
+          <div style="padding:10px 14px;border-radius:12px;background:var(--sf-soft);border:1px solid var(--stroke)">
+            <div style="font-size:11px;color:var(--text-3);margin-bottom:2px">${esc(t('dbColumns'))}</div>
+            <div style="font-size:14px;font-weight:600;color:${dbStatus.columns.length ? '#fcd34d' : '#6ee7b7'}">${dbStatus.columns.length ? esc(t('dbMissingCount',{n:dbStatus.columns.length})) : '✓'}</div>
+            ${dbStatus.columns.length ? `<div style="font-size:11.5px;color:#fda293;margin-top:3px">${dbStatus.columns.map(c=>c.table+'.'+c.column).join(', ')}</div>` : ''}
+          </div>
+          <div style="padding:10px 14px;border-radius:12px;background:var(--sf-soft);border:1px solid var(--stroke)">
+            <div style="font-size:11px;color:var(--text-3);margin-bottom:2px">${esc(t('dbIndexes'))}</div>
+            <div style="font-size:14px;font-weight:600;color:${dbStatus.indexes.length ? '#fcd34d' : '#6ee7b7'}">${dbStatus.indexes.length ? esc(t('dbMissingCount',{n:dbStatus.indexes.length})) : '✓'}</div>
+            ${dbStatus.indexes.length ? `<div style="font-size:11.5px;color:#fda293;margin-top:3px">${dbStatus.indexes.join(', ')}</div>` : ''}
+          </div>
+          <div style="padding:10px 14px;border-radius:12px;background:var(--sf-soft);border:1px solid var(--stroke)">
+            <div style="font-size:11px;color:var(--text-3);margin-bottom:2px">${esc(t('dbMigration'))}</div>
+            <div style="font-size:14px;font-weight:600;color:${dbStatus.migration.latest ? '#6ee7b7' : '#fcd34d'}">${dbStatus.migration.current} / ${dbStatus.migration.total}</div>
+          </div>
+        </div>
+        ${Object.keys(dbStatus.tableCounts).length ? `
+          <details style="margin-top:10px">
+            <summary style="cursor:pointer;font-size:12px;color:var(--text-3);user-select:none">${esc(t('dbTableRows'))}</summary>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">
+              ${Object.entries(dbStatus.tableCounts).map(([t,c]) => `<span style="font-size:11.5px;padding:3px 9px;border-radius:8px;background:rgba(255,255,255,.07);font-family:ui-monospace,'SF Mono',monospace;color:var(--text-2)">${t}: ${c}</span>`).join('')}
+            </div>
+          </details>` : ''}
+      ` : `<div style="font-size:12px;color:#fda293;margin-top:8px">—</div>`}
+      <div class="row" style="justify-content:flex-end;margin-top:10px;gap:8px">
+        <button class="btn sm" id="db-refresh">${esc(t('dbStatusRefresh'))}</button>
+        <button class="btn sm ${dbStatus && dbStatus.healthy ? '' : 'primary'}" id="db-repair">${esc(t('dbRepairBtn'))}</button>
+      </div>
+    </div>
+    <button class="btn primary" id="st-save" style="padding:14px 28px;font-size:15px;border-radius:18px">${esc(t('save'))}</button>`;
+
+  // ── 数据库工具按钮 ──
+  $('#db-refresh')?.addEventListener('click', () => loadSettings());
+  $('#db-repair')?.addEventListener('click', async () => {
+    if (!(await confirmDialog(t('dbRepairConfirmT'), t('dbRepairConfirmD')))) return;
+    const btn = $('#db-repair');
+    const orig = btn.textContent;
+    btn.textContent = t('dbRepairing');
+    btn.disabled = true;
+    try {
+      const r = await api('/api/admin/db/repair', { method: 'POST' });
+      if (r.ok) {
+        // 构造详细描述
+        const parts = [];
+        if (r.tablesCreated.length) parts.push(`${t('dbRepairDetailTables')} ${r.tablesCreated.length}`);
+        if (r.columnsAdded.length)   parts.push(`${t('dbRepairDetailCols')} ${r.columnsAdded.length}`);
+        if (r.indexesCreated.length) parts.push(`${t('dbRepairDetailIdx')} ${r.indexesCreated.length}`);
+        if (r.migrationsRun)         parts.push(`${t('dbRepairDetailMigrations')} ${r.migrationsRun}`);
+        parts.push(`${t('dbRepairDetailTime')} ${r.durationMs}ms`);
+        toast(t('dbRepairOk') + (parts.length ? ` · ${parts.join(' · ')}` : ''), 'ok');
+      } else {
+        toast(t('dbRepairFail') + (r.error ? ': ' + r.error : ''), 'err');
+      }
+    } catch (e) {
+      toast(t('dbRepairFail') + ': ' + (e.message || e), 'err');
+    } finally {
+      btn.textContent = orig;
+      btn.disabled = false;
+      loadSettings(); // 刷新状态
+    }
+  });
+
+  $('#st-reset-traffic')?.addEventListener('click', async () => {
+    if(!(await confirmDialog(t('confirmResetT'), t('confirmResetD'), false))) return;
+    await api('/api/admin/traffic/reset', { method:'POST' });
+    toast(t('trafficResetOk'));
+    loadSettings();
+  });
+  $('#st-clear-30')?.addEventListener('click', async () => {
+    if(!(await confirmDialog(t('confirmClear30T'), t('confirmClear30D')))) return;
+    const r = await api('/api/admin/logs?mode=older&days=30', { method:'DELETE' });
+    toast(t('clearedN', {n: r.deleted}));
+  });
+  $('#st-clear-all')?.addEventListener('click', async () => {
+    if(!(await confirmDialog(t('confirmClearAllT'), t('confirmClearAllD')))) return;
+    const r = await api('/api/admin/logs?mode=all', { method:'DELETE' });
+    toast(t('clearedN', {n: r.deleted}));
+  });
+  $('#st-save')?.addEventListener('click', async () => {
+    // 现在只保存非 Modal 的设置项；Turnstile 和 OAuth Provider 在各自 Modal 里保存
+    const body = {
+      site_title: $('#st-title').value.trim(),
+      traffic_limit_gb: Number($('#st-limit').value) || 0,
+      max_downloads_per_ip: Number($('#st-perip').value) || 0,
+      count_window_hours: Number($('#st-window').value) || 0,
+      auto_ban: $('#st-autoban').checked,
+      ban_hours: Number($('#st-banhours').value) || 0,
+      oauth_enabled: $('#oauth-enabled').checked,
+      admin_ips: $('#st-adminips').value.trim(),
+      home_redirect_market: $('#st-home-market').checked,
+      codes_floating_button_enabled: $('#st-codes-float').checked,
+      codes_floating_button_position: $('#st-codes-pos').value,
+      storage_provider: $('#st-backend').value,
+    };
+    await api('/api/admin/settings', { method:'PUT', body: JSON.stringify(body) });
+    toast(t('saved'));
+    loadSettings();
+  });
+
+  // ═══════════════════════════════════
+  // WebDAV 存储后端配置 Modal
+  // ═══════════════════════════════════
+  $('#st-backend-webdav-cfg')?.addEventListener('click', async () => {
+    const s = await api('/api/admin/settings');
+    openModal(`
+      <h3>🔗 WebDAV ${esc(t('storageBackendConfig'))}</h3>
+      <div class="sub" style="font-size:12.5px;line-height:1.6">
+        ${LANG==='zh'
+          ? '填入任意支持 WebDAV 的网盘地址，如：<br>• 坚果云: <code>https://dav.jianguoyun.com/dav/</code><br>• OneDrive: <code>https://dav.onedrive.com/</code>'
+          : 'Enter any WebDAV-enabled cloud drive URL, e.g.:<br>• Jianguoyun: <code>https://dav.jianguoyun.com/dav/</code><br>• OneDrive: <code>https://dav.onedrive.com/</code>'}
+      </div>
+      <div class="field" style="margin-top:14px">
+        <label>${esc(t('storageBackendUrl'))}</label>
+        <input type="text" id="wd-url" value="${esc(s.storage_webdav_url ?? '')}" placeholder="https://dav.jianguoyun.com/dav/" style="width:100%;padding:10px 12px;border-radius:12px;font-size:13px;color:var(--text);background:var(--sf-input);border:1px solid var(--stroke-strong);outline:none;font-family:ui-monospace,'SF Mono',monospace">
+      </div>
+      <div class="field">
+        <label>${esc(t('storageBackendUser'))}</label>
+        <input type="text" id="wd-user" value="${esc(s.storage_webdav_username ?? '')}" placeholder="your@email.com" style="width:100%;padding:10px 12px;border-radius:12px;font-size:13px;color:var(--text);background:var(--sf-input);border:1px solid var(--stroke-strong);outline:none">
+      </div>
+      <div class="field">
+        <label>${esc(t('storageBackendPwd'))}</label>
+        <input type="password" id="wd-pwd" value="" placeholder="${s.storage_webdav_password_configured ? esc(t('storageBackendPwdKeep')) : ''}" style="width:100%;padding:10px 12px;border-radius:12px;font-size:13px;color:var(--text);background:var(--sf-input);border:1px solid var(--stroke-strong);outline:none;font-family:ui-monospace,'SF Mono',monospace">
+        <div class="tip" style="line-height:1.6;margin-top:4px">
+          ${s.storage_webdav_password_configured
+            ? `<span style="color:#6ee7b7">✓ ${LANG==='zh'?'已设置':'Set'}</span> — ${esc(t('storageBackendPwdKeep'))}`
+            : `<span style="color:#fda293">⚠ ${LANG==='zh'?'未设置':'Not set'}</span>`}
+        </div>
+      </div>
+      <div class="field" style="margin-top:4px">
+        <button class="btn sm" id="wd-test" style="padding:8px 16px;font-size:12.5px;border-radius:12px">🧪 ${esc(t('storageBackendTest'))}</button>
+        <span id="wd-test-result" style="margin-left:10px;font-size:12.5px;color:var(--text-3)"></span>
+      </div>
+      <div class="actions" style="margin-top:18px">
+        <button class="btn" data-x>${esc(t('cancel'))}</button>
+        <button class="btn primary" id="wd-save">${esc(t('save'))}</button>
+      </div>
+    `);
+    $('[data-x]')?.addEventListener('click', closeModal);
+
+    $('#wd-test')?.addEventListener('click', async () => {
+      const url = $('#wd-url').value.trim();
+      const user = $('#wd-user').value.trim();
+      const pwd = $('#wd-pwd').value.trim();
+      const result = $('#wd-test-result');
+      if (!url || !user) { result.textContent = LANG==='zh' ? '请填写 URL 和用户名' : 'URL and username required'; result.style.color = '#fda293'; return; }
+      result.textContent = '…'; result.style.color = 'var(--text-3)';
+      try {
+        const payload: any = { provider: 'webdav', url, username: user };
+        if (pwd) payload.password = pwd;
+        const r = await api('/api/admin/storage/test', { method: 'POST', body: JSON.stringify(payload) });
+        if (r.ok) {
+          result.textContent = `✓ ${esc(t('storageBackendConnected'))} (${r.entries_found ?? 0} entries)`;
+          result.style.color = '#6ee7b7';
+        } else {
+          result.textContent = `✗ ${esc(t('storageBackendConnectFail'))}: ${r.message || r.error || ''}`;
+          result.style.color = '#fda293';
+        }
+      } catch (e: any) {
+        result.textContent = `✗ ${esc(t('storageBackendConnectFail'))}: ${e?.message ?? ''}`;
+        result.style.color = '#fda293';
+      }
+    });
+
+    $('#wd-save')?.addEventListener('click', async () => {
+      const url = $('#wd-url').value.trim().replace(/\/+$/, '');
+      const user = $('#wd-user').value.trim();
+      const pwdVal = $('#wd-pwd').value.trim();
+      const body: any = {
+        storage_provider: 'webdav',
+        storage_webdav_url: url,
+        storage_webdav_username: user,
+      };
+      if (pwdVal === '') {
+        body.storage_webdav_password = '__keep__';
+      } else {
+        body.storage_webdav_password = pwdVal;
+      }
+      await api('/api/admin/settings', { method: 'PUT', body: JSON.stringify(body) });
+      closeModal();
+      toast(t('saved'));
+      loadSettings();
+    });
+  });
+
+  // ═══════════════════════════════════
+  // Turnstile 配置 Modal
+  // ═══════════════════════════════════
+  $('#ts-configure')?.addEventListener('click', async () => {
+    const s = await api('/api/admin/settings');
+    openModal(`
+      <h3>⚙️ ${esc(t('configureTurnstile'))}</h3>
+      <div class="sub">${esc(t('tsGroupD'))}</div>
+      <div class="field" style="margin-top:14px">
+        <label>${esc(t('tsMode'))}</label>
+        <select id="ts-m" style="width:100%;padding:10px 12px;border-radius:12px;font-size:13px;color:var(--text);background:var(--sf-input);border:1px solid var(--stroke-strong);outline:none">
+          <option value="off" ${s.turnstile_mode==='off'?'selected':''} style="color:#111">${esc(t('tsModeOff'))}</option>
+          <option value="on_share" ${s.turnstile_mode==='on_share'?'selected':''} style="color:#111">${esc(t('tsModeShare'))}</option>
+          <option value="on_download" ${s.turnstile_mode==='on_download'?'selected':''} style="color:#111">${esc(t('tsModeDownload'))}</option>
+          <option value="both" ${s.turnstile_mode==='both'?'selected':''} style="color:#111">${esc(t('tsModeBoth'))}</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>${esc(t('tsThreshold'))}</label>
+        <input type="number" id="ts-th" min="0" max="10000" value="${s.turnstile_threshold ?? 5}" style="width:100%;padding:10px 12px;border-radius:12px;font-size:13px;color:var(--text);background:var(--sf-input);border:1px solid var(--stroke-strong);outline:none">
+        <div class="tip">${esc(t('tsThresholdHelp'))}</div>
+      </div>
+      <div class="field">
+        <label>${esc(t('tsSitekeyOverride'))}</label>
+        <input type="text" id="ts-sko" value="${esc(s.turnstile_sitekey_override ?? '')}" placeholder="0xAAAA..." style="width:100%;padding:10px 12px;border-radius:12px;font-size:13px;color:var(--text);background:var(--sf-input);border:1px solid var(--stroke-strong);outline:none;font-family:ui-monospace,'SF Mono',monospace">
+      </div>
+      <div class="field">
+        <label>${esc(t('tsSecretOverride'))}</label>
+        <input type="password" id="ts-secret" value="" placeholder="${s.cloudflare_turnstile_secret || s.turnstile_secret_configured ? esc(t('tsSecretKeep')) : esc(t('tsSecretPlaceholder'))}" style="width:100%;padding:10px 12px;border-radius:12px;font-size:13px;color:var(--text);background:var(--sf-input);border:1px solid var(--stroke-strong);outline:none;font-family:ui-monospace,'SF Mono',monospace">
+        <div class="tip" style="line-height:1.6">
+          ${s.cloudflare_turnstile_secret
+            ? `<span style="color:#6ee7b7">✓ ${esc(t('tsSecretOk'))} — ${esc(t('tsSecretInCloudflare'))}</span>`
+            : s.turnstile_secret_configured
+              ? `<span style="color:var(--blue)">✓ ${esc(t('tsSecretOk'))} — ${esc(t('tsSecretInDatabase'))}</span>`
+              : `<span style="color:#fda293">⚠ ${esc(t('tsSecretMissing'))} — ${esc(t('tsSecretHint'))}</span>`}<br>
+          ${s.cloudflare_turnstile_sitekey
+            ? `<span style="color:#6ee7b7">✓ Sitekey ${esc(t('tsInCloudflare'))}</span>`
+            : s.turnstile_sitekey_override
+              ? `<span style="color:var(--blue)">✓ Sitekey ${esc(t('tsInDatabase'))}</span>`
+              : `<span style="color:#fde68a">⚠ Sitekey ${esc(t('tsMissingBoth'))}</span>`}
+        </div>
+      </div>
+      <div class="actions" style="margin-top:18px">
+        <button class="btn" data-x>${esc(t('cancel'))}</button>
+        <button class="btn primary" id="ts-save">${esc(t('save'))}</button>
+      </div>
+    `);
+    $('[data-x]')?.addEventListener('click', closeModal);
+    $('#ts-save')?.addEventListener('click', async () => {
+      const secretVal = $('#ts-secret').value.trim();
+      // 处理 Secret 三种状态：空 = 保留原值；非空(非 __keep__) = 更新；用户显式点"清除"走其他路径
+      let secretPayload = '__keep__';
+      if (secretVal === '') {
+        secretPayload = '__keep__'; // 空表示不改
+      } else if (secretVal === '__clear__') {
+        secretPayload = ''; // 显式清除（目前不用这个，占位）
+      } else {
+        secretPayload = secretVal;
+      }
+      const body = {
+        turnstile_mode: $('#ts-m').value,
+        turnstile_threshold: Number($('#ts-th').value) || 0,
+        turnstile_sitekey_override: $('#ts-sko').value.trim(),
+        turnstile_secret: secretPayload,
+      };
+      await api('/api/admin/settings', { method:'PUT', body: JSON.stringify(body) });
+      closeModal();
+      toast(t('saved'));
+      loadSettings();
+    });
+  });
+
+  // Turnstile 重置访问计数
+  $('#ts-reset')?.addEventListener('click', async () => {
+    if(!(await confirmDialog(t('tsResetVisits'), t('tsResetVisitsD'), false))) return;
+    await api('/api/admin/turnstile/visits', { method:'DELETE' });
+    toast(t('tsVisitsReset'));
+  });
+
+  // ═══════════════════════════════════
+  // OAuth2 Provider CRUD (Modal)
+  // ═══════════════════════════════════
+
+  const PROVIDER_PRESETS = {
+    github:   { name:'GitHub',    defaultScope:'user:email' },
+    google:   { name:'Google',    defaultScope:'openid email profile' },
+    microsoft:{ name:'Microsoft', defaultScope:'openid email profile User.Read' },
+    discord:  { name:'Discord',   defaultScope:'identify email' },
+    custom:   { name:'Custom',    defaultScope:'openid email profile' },
+  };
+  function openOauthProviderModal(row){
+    // row = null 表示新建，否则是已有数据
+    const editing = !!row;
+    const preset = PROVIDER_PRESETS[row?.provider_type || 'github'];
+    openModal(`
+      <h3>${esc(editing ? t('oauthEditTitle') : t('oauthAddTitle'))}</h3>
+      <div class="sub">${esc(t('oauthGroupD'))}</div>
+      <div class="field" style="margin-top:14px">
+        <label>${esc(t('oauthLabel'))}</label>
+        <input type="text" id="op-label" value="${esc(row?.label || preset.name)}" placeholder="${esc(t('oauthLabel'))}" style="width:100%">
+      </div>
+      <div class="field">
+        <label>${esc(t('oauthProvider'))}</label>
+        <select id="op-type" style="width:100%">
+          <option value="github" ${row?.provider_type==='github'?'selected':''} style="color:#111">GitHub</option>
+          <option value="google" ${row?.provider_type==='google'?'selected':''} style="color:#111">Google</option>
+          <option value="microsoft" ${row?.provider_type==='microsoft'?'selected':''} style="color:#111">Microsoft</option>
+          <option value="discord" ${row?.provider_type==='discord'?'selected':''} style="color:#111">Discord</option>
+          <option value="custom" ${row?.provider_type==='custom'?'selected':''} style="color:#111">Custom / ${esc(t('custom'))}</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>${esc(t('oauthClientId'))}</label>
+        <input type="text" id="op-cid" value="${esc(row?.client_id || '')}" placeholder="${esc(t('oauthClientId'))}" style="width:100%;font-family:ui-monospace,'SF Mono',monospace">
+      </div>
+      <div class="field">
+        <label>${esc(t('oauthClientSecret'))}</label>
+        <input type="password" id="op-secret" value="" placeholder="${row?.secret_configured ? esc(t('oauthKeepSecret')) : esc(t('oauthClientSecret'))}" style="width:100%;font-family:ui-monospace,'SF Mono',monospace">
+        <div class="tip">${esc(t('oauthClientSecretHelp'))}</div>
+      </div>
+      <div class="field">
+        <label>${esc(t('oauthScope'))}</label>
+        <input type="text" id="op-scope" value="${esc(row?.scope || preset.defaultScope)}" style="width:100%">
+      </div>
+      <div id="op-custom-block" style="display:${row?.provider_type==='custom'?'block':'none'}">
+        <div class="field">
+          <label>${esc(t('oauthCustomAuthorize'))}</label>
+          <input type="text" id="op-au" value="${esc(row?.custom_authorize_url || '')}" style="width:100%;font-family:ui-monospace,'SF Mono',monospace">
+        </div>
+        <div class="field">
+          <label>${esc(t('oauthCustomToken'))}</label>
+          <input type="text" id="op-tu" value="${esc(row?.custom_token_url || '')}" style="width:100%;font-family:ui-monospace,'SF Mono',monospace">
+        </div>
+        <div class="field">
+          <label>${esc(t('oauthCustomUserinfo'))}</label>
+          <input type="text" id="op-ui" value="${esc(row?.custom_userinfo_url || '')}" style="width:100%;font-family:ui-monospace,'SF Mono',monospace">
+        </div>
+        <div class="field">
+          <label>${esc(t('oauthCustomTokenField'))}</label>
+          <input type="text" id="oauth-ctf" value="${esc(row?.custom_token_field || 'access_token')}" style="width:100%;font-family:ui-monospace,'SF Mono',monospace">
+        </div>
+      </div>
+      <div class="field" style="margin-top:8px">
+        <div style="font-size:12px;color:var(--text-3);line-height:1.6">
+          ${esc(t('oauthCallbackUrl'))}:<br>
+          <input type="text" readonly value="${esc(window.location.origin)}/oauth/callback" style="width:100%;margin-top:4px;padding:8px 12px;border-radius:10px;font-size:12px;color:var(--blue);background:rgba(0,0,0,.3);border:1px solid var(--stroke);outline:none;font-family:ui-monospace,'SF Mono',monospace" onclick="this.select()">
+          <div style="margin-top:4px">${esc(t('oauthCallbackHint'))}</div>
+        </div>
+      </div>
+      <div class="actions" style="margin-top:18px">
+        <button class="btn" data-x>${esc(t('cancel'))}</button>
+        <button class="btn primary" id="op-save">${esc(t('save'))}</button>
+      </div>
+    `);
+    // Provider type 切换 → 显示/隐藏 Custom 块
+    $('#op-type')?.addEventListener('change', () => {
+      $('#op-custom-block').style.display = $('#op-type').value === 'custom' ? 'block' : 'none';
+      const preset = PROVIDER_PRESETS[$('#op-type').value];
+      if (preset && $('#op-scope')?.value === '') $('#op-scope').value = preset.defaultScope;
+    });
+    $('[data-x]')?.addEventListener('click', closeModal);
+    $('#op-save')?.addEventListener('click', async () => {
+      const body = {
+        label: $('#op-label').value.trim(),
+        provider_type: $('#op-type').value,
+        client_id: $('#op-cid').value.trim(),
+        scope: $('#op-scope').value.trim(),
+        enabled: row?.enabled !== false, // 默认启用
+      };
+      const secret = $('#op-secret').value.trim();
+      if (secret) body.client_secret = secret; // 非空则更新
+      else if (row?.secret_configured) body.client_secret = '__keep__'; // 编辑且未改密码 → 保留
+      else body.client_secret = ''; // 新建没填 → 空字符串不加密
+      if ($('#op-type').value === 'custom') {
+        body.custom_authorize_url = $('#op-au').value.trim();
+        body.custom_token_url = $('#op-tu').value.trim();
+        body.custom_userinfo_url = $('#op-ui').value.trim();
+        body.custom_token_field = $('#oauth-ctf').value.trim() || 'access_token';
+      }
+      try {
+        if (editing) {
+          await api(`/api/admin/oauth/providers/${row.id}`, { method:'PUT', body: JSON.stringify(body) });
+        } else {
+          await api('/api/admin/oauth/providers', { method:'POST', body: JSON.stringify(body) });
+        }
+        closeModal();
+        toast(t('saved'));
+        loadSettings();
+      } catch(err){ toast(err.message, 'err'); }
+    });
+  }
+
+  // 添加 Provider
+  $('#oauth-add')?.addEventListener('click', () => openOauthProviderModal(null));
+
+  // 列表里的按钮 —— 事件委托
+  $('#oauth-providers-grid')?.addEventListener('click', async (e) => {
+    const cfgBtn = e.target.closest('[data-oauth-config]');
+    const tglBtn = e.target.closest('[data-oauth-toggle]');
+    const delBtn = e.target.closest('[data-oauth-delete]');
+    if (!cfgBtn && !tglBtn && !delBtn) return;
+    const id = (cfgBtn || tglBtn || delBtn).dataset.oauthConfig || (cfgBtn || tglBtn || delBtn).dataset.oauthToggle || (cfgBtn || tglBtn || delBtn).dataset.oauthDelete;
+    if (!id) return;
+
+    if (cfgBtn) {
+      // 先拉一次完整数据再打开 Modal
+      const list = await api('/api/admin/oauth/providers');
+      const row = list.providers.find(p => p.id === id);
+      if (row) openOauthProviderModal(row);
+    } else if (tglBtn) {
+      await api(`/api/admin/oauth/providers/${id}/toggle`, { method:'POST' });
+      loadSettings();
+    } else if (delBtn) {
+      if (!(await confirmDialog(t('confirmDeleteTitle'), t('confirmOAuthDeleteD'), false))) return;
+      await api(`/api/admin/oauth/providers/${id}`, { method:'DELETE' });
+      loadSettings();
+    }
+  });
+
+  // 2FA Setup
+  $('#twofa-setup')?.addEventListener('click', async () => {
+    const adminKey = await promptAdminKey();
+    if(!adminKey) return;
+    try{
+      const r = await api('/api/admin/2fa/setup', { method:'POST', body: JSON.stringify({ admin_key: adminKey }) });
+      const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(r.uri)}`;
+      openModal(`
+        <h3>${esc(t('twofaSetupT'))}</h3>
+        <div class="sub">${esc(t('twofaSetupD1'))}</div>
+        <div style="text-align:center;margin:10px 0 8px">
+          <img src="${qrUrl}" style="width:200px;height:200px;border-radius:12px;background:#fff;padding:10px">
+        </div>
+        <div style="margin:10px 0;font-size:13px">
+          <div style="color:var(--text-3);margin-bottom:4px">${esc(t('twofaSetupKey'))}:</div>
+          <input readonly value="${esc(r.secret)}" style="width:100%;padding:10px 12px;border-radius:10px;font-family:ui-monospace,'SF Mono',monospace;font-size:13px;color:var(--blue);background:rgba(0,0,0,.3);border:1px solid var(--stroke)" onclick="this.select()">
+        </div>
+        <div class="field" style="margin:12px 0">
+          <input type="text" id="2fa-code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="${esc(t('twofaSetupCodePh'))}" style="text-align:center;letter-spacing:.4em;font-size:18px">
+        </div>
+        <div class="actions">
+          <button class="btn" data-x>${esc(t('cancel'))}</button>
+          <button class="btn primary" id="2fa-enable">${esc(t('confirm'))}</button>
+        </div>
+      `);
+      $('[data-x]').onclick = closeModal;
+      $('#2fa-enable').onclick = async () => {
+        const code = $('#2fa-code').value.trim();
+        if(!/^\d{6}$/.test(code)) return;
+        try{
+          const en = await api('/api/admin/2fa/enable', { method:'POST', body: JSON.stringify({ admin_key: adminKey, code, secret: r.secret }) });
+          closeModal();
+          // 展示恢复码
+          showRecoveryCodes(en.recovery_codes);
+        }catch(err){ toast(err.message, 'err'); }
+      };
+    }catch(err){ toast(err.message, 'err'); }
+  });
+
+  // ── 2FA Disable ──
+  $('#twofa-disable')?.addEventListener('click', async () => {
+    if(!(await confirmDialog(t('twofaDisableT'), t('twofaDisableD'), true))) return;
+    const adminKey = await promptAdminKey();
+    if(!adminKey) return;
+    try{
+      await api('/api/admin/2fa/disable', { method:'POST', body: JSON.stringify({ admin_key: adminKey }) });
+      toast(t('twofaSetupT').includes('开启') ? '2FA 已关闭' : '2FA disabled');
+      loadSettings();
+    }catch(err){ toast(err.message, 'err'); }
+  });
+
+  // ── 2FA Regen Recovery ──
+  $('#twofa-regen')?.addEventListener('click', async () => {
+    if(!(await confirmDialog(t('twofaRegenT'), t('twofaRegenD'), false))) return;
+    const adminKey = await promptAdminKey();
+    if(!adminKey) return;
+    try{
+      const r = await api('/api/admin/2fa/regen-recovery', { method:'POST', body: JSON.stringify({ admin_key: adminKey }) });
+      showRecoveryCodes(r.recovery_codes);
+    }catch(err){ toast(err.message, 'err'); }
+  });
+}
+
+function promptAdminKey(){
+  return new Promise(resolve => {
+    openModal(`
+      <h3>${esc(t('twofaAdminKeyPh'))}</h3>
+      <form id="pk-form"><input type="password" id="pk-input" autofocus placeholder="${esc(t('keyPlaceholder'))}" style="text-align:center"></form>
+      <div class="actions" style="margin-top:16px">
+        <button class="btn" data-x>${esc(t('cancel'))}</button>
+        <button class="btn primary" id="pk-ok">${esc(t('confirm'))}</button>
+      </div>
+    `);
+    $('[data-x]').onclick = () => { closeModal(); resolve(null); };
+    $('#pk-ok').onclick = () => { const v = $('#pk-input').value.trim(); closeModal(); resolve(v || null); };
+    $('#pk-form').onsubmit = e => { e.preventDefault(); $('#pk-ok').click(); };
+    setTimeout(() => $('#pk-input').focus(), 50);
+  });
+}
+
+function showRecoveryCodes(codes){
+  openModal(`
+    <h3>✅ ${esc(t('twofaSetupDone'))}</h3>
+    <div class="sub">${esc(t('twofaSetupRecoveryT'))}</div>
+    <div style="margin:10px 0">
+      <div class="banner" style="border-radius:14px;padding:12px 16px">
+        <div class="ic">⚠️</div>
+        <div class="t" style="color:#ffd9a0;font-size:13px">${esc(t('twofaSetupRecoveryD'))}</div>
+      </div>
+      <div style="background:rgba(0,0,0,.3);border-radius:12px;padding:16px;font-family:ui-monospace,'SF Mono',monospace;font-size:14px;color:#fde68a;line-height:1.8">
+        ${codes.map(c => `<div>${esc(c)}</div>`).join('')}
+      </div>
+    </div>
+    <div class="actions">
+      <button class="btn" id="rc-copy">${esc(t('copy'))}</button>
+      <button class="btn primary" data-x>${esc(t('close'))}</button>
+    </div>
+  `);
+  $('#rc-copy').onclick = () => copyText(codes.join('\n')).then(() => toast(t('twofaSetupRecoveryCopied')));
+  $('[data-x]').onclick = () => { closeModal(); loadSettings(); };
+}
+
+/* ═══════════ 启动 ═══════════ */
+(async () => {
+  try{
+    const s = await api('/api/admin/session');
+    siteTitle = s.site_title || siteTitle;
+    showApp();
+  }catch{
+    // api() 内部已对 401 调用 showLogin() 并 throw，这里静默兜底即可
+    // 若 api() 因其他错误 throw，也不渲染空页面
+    if (!document.querySelector('#login-view')) showLogin();
+  }
+})();
+</script>
+</body>
+</html>

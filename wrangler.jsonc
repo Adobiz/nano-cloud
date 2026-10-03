@@ -1,0 +1,49 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "nano-cloud",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+
+  // ═══════════════ 基础设施资源绑定（自动查找/创建） ═══════════════
+  // 本地开发时 wrangler dev 自动创建本地实例；
+  // 生产部署时自动在 Cloudflare 上查找同名资源并绑定。
+  // 如果 Cloudflare 控制台已手动配置同名绑定，会优先复用控制台配置，不会覆盖。
+  "d1_databases": [
+    {
+      "binding": "db",
+      "database_name": "nano-cloud",
+      "database_id": ""
+    }
+  ],
+  // ⚠️ R2 是可选的 —— 如果你改用其他 S3 兼容存储（见下方 analytics_engine_datasets），
+  //    可以注释掉这个 r2_buckets 块，把存储完全交给外部 S3。
+  "r2_buckets": [
+    {
+      "binding": "r2",
+      "bucket_name": "nano-cloud"
+    }
+  ],
+
+  // ═══════════════ Workers Analytics Engine（全球分布分析） ═══════════════
+  // 每次下载都会向这个 dataset 写入一个数据点，包含国家、经纬度、文件名等。
+  // 绑定是可选的：没绑定时全球分布 Tab 会降级使用 D1 的 download_logs。
+  // 首次部署时 Cloudflare 会自动创建这个 dataset。
+  "analytics_engine_datasets": [
+    {
+      "binding": "analytics",
+      "dataset": "r2pan_downloads"
+    }
+  ],
+
+  // ═══════════════ 密钥/敏感配置（不在仓库中声明） ═══════════════
+  // 本地开发：创建 .dev.vars 文件（已 .gitignore）写入 admin=你的密钥
+  // 生产环境：通过 Cloudflare 控制台 → Worker → Settings → Secrets 添加
+  //          或执行 npx wrangler secret put admin
+
+  // 将 public/*.html 作为文本模块导入
+  "rules": [
+    { "type": "Text", "globs": ["**/*.html"], "fallthrough": true }
+  ],
+
+  "observability": { "enabled": true }
+}

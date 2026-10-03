@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160" role="img" aria-labelledby="title desc">
+  <title id="title">nano-cloud</title>
+  <desc id="desc">A terracotta cloud with a small orange sun on a warm paper background.</desc>
+  <rect x="6" y="6" width="148" height="148" rx="40" fill="#f6f4ee"/>
+  <circle cx="111" cy="49" r="15" fill="#dc8150"/>
+  <path d="M46 112c-15 0-25-10-25-23 0-12 9-22 21-24 3-18 18-30 36-30 20 0 36 14 38 34 14 0 25 10 25 23s-11 23-25 23H46Z" fill="#a64f36"/>
+  <path d="M59 96V76m0 6c8-10 22-7 22 6v8m19-16v16" fill="none" stroke="#f6f4ee" stroke-width="7" stroke-linecap="round"/>
+  <circle cx="100" cy="68" r="4" fill="#f6f4ee"/>
+</svg>

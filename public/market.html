@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>下载市场 · nano-cloud</title>
+<style>
+
+/* Warm editorial design tokens, shared by the three HTML entry points. */
+:root {
+  color-scheme:light;
+  --bg-page:#f6f4ee; --glass:#fffdf8; --glass-strong:#fffdf8;
+  --text:#302e29; --text-2:#655f56; --text-3:#787066;
+  --stroke:#e4dfd5; --stroke-strong:#cec7ba; --blue:#a64f36;
+  --accent:#a64f36; --accent-soft:#f0e1d7; --success:#35664c;
+  --warning:#8a5b18; --danger:#a13c32;
+  --sf-soft:#f8f6f0; --sf:#efece4; --sf-strong:#e9e4d9;
+  --sf-input:#fffdf8; --sf-input-focus:#fffdf8;
+  --track-bg:#ded8cc; --bar-bg:#eae4d9;
+  --tbl-divider:#ece7dd; --tbl-hover:#f6f2e9; --tbl-row-border:#ece7dd;
+  --scrollbar-thumb:#c8c0b3; --radius:12px;
+  --display:"Songti SC","STSong",Georgia,"Times New Roman",serif;
+  --body:"PingFang SC","Microsoft YaHei",-apple-system,BlinkMacSystemFont,sans-serif;
+}
+* { box-sizing:border-box; margin:0; padding:0; }
+html { -webkit-text-size-adjust:100%; }
+body { font-family:var(--body); color:var(--text); background:var(--bg-page); font-size:15px; line-height:1.65; min-height:100vh; overflow-x:hidden; }
+::selection { background:var(--accent-soft); }
+button,input,select,textarea { font:inherit; }
+button,a,input,select,textarea { -webkit-tap-highlight-color:transparent; }
+button,a { touch-action:manipulation; }
+a { color:var(--accent); text-underline-offset:4px; }
+a:hover { text-decoration:underline; }
+h1,h2,h3,p { text-wrap:pretty; }
+:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+input:focus,textarea:focus,select:focus { border-color:var(--accent)!important; }
+input::placeholder,textarea::placeholder { color:var(--text-3); }
+button { cursor:pointer; }
+button:disabled,.btn[disabled] { opacity:.45; cursor:not-allowed; pointer-events:none; }
+button:active,.btn:active { transform:translateY(1px); }
+.orb { display:none; }
+::-webkit-scrollbar { width:8px; height:8px; }
+::-webkit-scrollbar-thumb { background:var(--scrollbar-thumb); border:2px solid var(--bg-page); border-radius:8px; }
+.mono { font-family:ui-monospace,"SF Mono",monospace; font-size:13px; }
+.btn,.lang-btn { display:inline-flex; align-items:center; justify-content:center; gap:8px; min-height:40px; padding:9px 16px; border:1px solid var(--stroke-strong); border-radius:8px; background:var(--glass); color:var(--text); font-size:14px; font-weight:500; text-decoration:none; transition:background .15s,border-color .15s; }
+.btn:hover,.lang-btn:hover { background:var(--sf); border-color:var(--text-3); text-decoration:none; }
+.btn.primary { background:var(--accent); color:#fffdf8; border-color:var(--accent); }
+.btn.primary:hover { filter:brightness(.94); }
+.btn.danger { color:var(--danger); background:transparent; border-color:var(--stroke-strong); }
+.btn.danger:hover { background:var(--accent-soft); }
+.btn.sm { min-height:34px; padding:6px 11px; font-size:13px; }
+.empty { text-align:center; padding:48px 20px; color:var(--text-3); }
+.empty .icon,.empty .emoji { font-size:32px; margin-bottom:12px; }
+.spin,.spinner { width:28px; height:28px; margin:28px auto; border:2px solid var(--stroke); border-top-color:var(--accent); border-radius:50%; animation:spin .8s linear infinite; }
+@keyframes spin { to { transform:rotate(360deg); } }
+@keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
+@keyframes shake { 0%,100% { transform:translateX(0); } 25%,75% { transform:translateX(-4px); } 50% { transform:translateX(4px); } }
+.shake,.pw.shake input { animation:shake .25s; }
+@media (prefers-reduced-motion:reduce) { *,*::before,*::after { animation-duration:.01ms!important; animation-iteration-count:1!important; transition:none!important; scroll-behavior:auto!important; } }
+
+h1,h3 { font-family:var(--display); font-weight:500; }
+body { padding:32px 24px 80px; }
+.card { background:var(--glass); border:1px solid var(--stroke); border-radius:14px; box-shadow:none; }
+.meta,.hint,.subtitle,.sub,footer { color:var(--text-3); }
+.warn { padding:14px 16px; margin-top:18px; border:1px solid var(--stroke-strong); background:var(--accent-soft); color:var(--warning); border-radius:8px; font-size:14px; }
+.loading { padding:60px 0; text-align:center; }
+.lang-btn { font-size:13px; min-height:36px; padding:6px 12px; }
+.brand-icon,.icon { background:var(--sf); border:1px solid var(--stroke); color:var(--accent); border-radius:8px; display:flex; align-items:center; justify-content:center; }
+
+.container { max-width:1120px; margin:auto; }
+header { margin:10px 0 28px; }
+.brand { display:flex; align-items:center; gap:16px; padding-bottom:30px; border-bottom:1px solid var(--stroke); margin-bottom:28px; }
+.brand-icon { width:44px; height:44px; font-size:24px; flex:none; }
+h1 { font-size:38px; line-height:1.25; letter-spacing:-1px; }
+.subtitle { font-size:15px; margin-top:8px; }
+.brand .lang-btn { margin-left:auto; }
+.toolbar { display:flex; gap:14px; flex-wrap:wrap; margin-bottom:20px; }
+.search { flex:1; min-width:200px; position:relative; }
+.search input,.sort select { width:100%; padding:13px 42px 13px 16px; background:var(--glass); border:1px solid var(--stroke-strong); border-radius:8px; color:var(--text); outline:none; }
+.search svg { position:absolute; right:16px; top:50%; transform:translateY(-50%); color:var(--text-3); }
+.sort select { min-width:160px; padding-right:14px; }
+.stats { display:flex; flex-wrap:wrap; gap:12px; color:var(--text-3); font-size:13px; }
+.stats .active { color:var(--text); }
+.grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(270px,1fr)); gap:20px; }
+a.card { display:block; padding:24px; text-decoration:none; color:var(--text); position:relative; transition:border-color .15s,background .15s; }
+a.card:hover { background:var(--sf-soft); border-color:var(--stroke-strong); }
+.card-head { display:flex; gap:14px; align-items:flex-start; margin-bottom:16px; }
+.icon { width:44px; height:48px; flex:none; font:600 11px ui-monospace,monospace; }
+.title { font-size:17px; font-weight:500; line-height:1.55; overflow-wrap:anywhere; }
+.title .alt { display:block; font-size:13px; font-weight:400; color:var(--text-3); }
+.desc { font-size:14px; line-height:1.7; color:var(--text-2); margin-bottom:20px; overflow-wrap:anywhere; }
+.meta { display:flex; justify-content:space-between; align-items:center; gap:10px; font-size:12px; flex-wrap:wrap; }.meta-left { display:flex; align-items:center; gap:10px; }
+.pill { padding:3px 8px; background:var(--sf); border-radius:4px; color:var(--text-2); font-size:12px; }
+.heat { display:inline-block; font-size:12px; color:var(--accent); margin-bottom:14px; padding:3px 8px; background:var(--accent-soft); border-radius:4px; }
+.pagination { display:flex; justify-content:center; align-items:center; flex-wrap:wrap; gap:8px; margin-top:32px; }.pagination button { min-width:40px; height:40px; padding:0 12px; background:var(--glass); color:var(--text); border:1px solid var(--stroke); border-radius:7px; }.pagination button:hover { background:var(--sf); }.pagination button.active { color:var(--accent); border-color:var(--accent); background:var(--accent-soft); }.pagination .info { color:var(--text-3); font-size:13px; margin-right:10px; }
+.empty,.loading { grid-column:1/-1; }.empty h3 { font-size:25px; margin-bottom:12px; }.empty p { font-size:15px; }
+footer { text-align:center; margin-top:48px; padding-top:24px; border-top:1px solid var(--stroke); font-size:13px; }
+@media(max-width:600px) { body { padding:22px 18px 40px; } h1 { font-size:28px; }.brand { gap:10px; }.brand-icon { display:none; }.subtitle { font-size:13px; }.grid { grid-template-columns:1fr; }.sort { width:100%; }.card { padding:20px; }.brand .lang-btn { flex:none; } }
+
+/* Retheme legacy inline presentation without changing its JavaScript. */
+[style*="color:rgba(255,255,255"], [style*="color: rgba(255,255,255"] { color:var(--text-2)!important; }
+[style*="color:#6ee7b7"], [style*="color:#34d399"], [style*="color:#16a34a"] { color:var(--success)!important; }
+[style*="color:#fcd34d"], [style*="color:#fde68a"], [style*="color:#ffd9a0"], [style*="color:#d97706"] { color:var(--warning)!important; }
+[style*="color:#fda293"], [style*="color:#ef4444"] { color:var(--danger)!important; }
+[style*="color:#a5b4fc"], [style*="color:#60a5fa"] { color:var(--accent)!important; }
+.modal [style*="background:rgba(0,0,0"], .section [style*="background:rgba(0,0,0"] { background:var(--sf)!important; }
+.logo svg { width:24px; height:24px; color:var(--accent); }
+.login-card .logo svg { width:32px; height:32px; }
+</style>
+</head>
+<body>
+<div class="orb o1"></div><div class="orb o2"></div><div class="orb o3"></div>
+<div class="container">
+  <header>
+    <div class="brand">
+      <div class="brand-icon">📦</div>
+      <div>
+        <h1 id="brand-title"></h1>
+        <div class="subtitle" id="brand-subtitle"></div>
+      </div>
+      <button class="lang-btn" id="lang-toggle"></button>
+    </div>
+    <div class="toolbar">
+      <div class="search">
+        <input id="q" type="text" placeholder="">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+      </div>
+      <div class="sort">
+        <select id="sort">
+          <option value="hot"></option>
+          <option value="newest"></option>
+          <option value="downloads"></option>
+          <option value="views"></option>
+        </select>
+      </div>
+    </div>
+    <div class="stats">
+      <span><span id="stats-total-prefix"></span> <span id="total" class="active">—</span> <span id="stats-total-suffix"></span></span>
+      <span>· <span id="stats-perpage-prefix"></span> <span class="active">12</span> <span id="stats-perpage-suffix"></span></span>
+    </div>
+  </header>
+
+  <main>
+    <div class="grid" id="grid">
+      <div class="loading"><div class="spinner"></div></div>
+    </div>
+    <div class="pagination" id="pagination"></div>
+  </main>
+
+  <footer>
+    <span id="footer-text"></span>
+  </footer>
+</div>
+
+<script>
+/* ═══════════ i18n ═══════════ */
+const I18N = {
+  zh: {
+    pageTitle: '下载市场 · nano-cloud',
+    brandTitle: '下载市场',
+    brandSubtitle: '发现、分享、下载',
+    searchPlaceholder: '搜索文件名、标题或描述…',
+    sortHot: '🔥 热度最高',
+    sortNewest: '🆕 最新发布',
+    sortDownloads: '⬇️ 下载量',
+    sortViews: '👁 浏览量',
+    statsTotalPrefix: '共',
+    statsTotalSuffix: '个资源',
+    statsPerpagePrefix: '每页',
+    statsPerpageSuffix: '条',
+    footerText: 'Powered by nano-cloud · <a href="/admin">管理后台</a>',
+    switchTo: 'EN',
+    loading: '加载中…',
+    loadFailTitle: '加载失败',
+    loadFailDesc: '稍后再试',
+    networkErrTitle: '网络错误',
+    networkErrDesc: '请检查网络连接',
+    emptySearchTitle: '没找到相关资源',
+    emptySearchDesc: '试试换个关键词',
+    emptyMarketTitle: '下载市场还是空的',
+    emptyMarketDesc: '管理员还没有公开任何文件',
+    noDesc: '暂无描述',
+    heatChampion: '👑 冠军',
+    heatRank2: '🥈',
+    heatRank3: '🥉',
+    downloadsLabel: '下载',
+    viewsLabel: '浏览',
+    prevPage: '‹',
+    nextPage: '›',
+    pagesInfoPrefix: '共',
+    pagesInfoSuffix: '页',
+    recent: '刚刚',
+    minutesAgo: '{n}分钟前',
+    hoursAgo: '{n}小时前',
+    daysAgo: '{n}天前',
+  },
+  en: {
+    pageTitle: 'Marketplace · nano-cloud',
+    brandTitle: 'Marketplace',
+    brandSubtitle: 'Discover · Share · Download',
+    searchPlaceholder: 'Search file name, title or description…',
+    sortHot: '🔥 Trending',
+    sortNewest: '🆕 Newest',
+    sortDownloads: '⬇️ Downloads',
+    sortViews: '👁 Views',
+    statsTotalPrefix: '',
+    statsTotalSuffix: 'resources',
+    statsPerpagePrefix: '',
+    statsPerpageSuffix: 'per page',
+    footerText: 'Powered by nano-cloud · <a href="/admin">Admin</a>',
+    switchTo: '中文',
+    loading: 'Loading…',
+    loadFailTitle: 'Failed to load',
+    loadFailDesc: 'Please try again later',
+    networkErrTitle: 'Network error',
+    networkErrDesc: 'Please check your connection',
+    emptySearchTitle: 'No results found',
+    emptySearchDesc: 'Try a different keyword',
+    emptyMarketTitle: 'Marketplace is empty',
+    emptyMarketDesc: 'No public files yet from the administrator',
+    noDesc: 'No description',
+    heatChampion: '👑 #1',
+    heatRank2: '🥈 #2',
+    heatRank3: '🥉 #3',
+    downloadsLabel: 'DL',
+    viewsLabel: 'View',
+    prevPage: '‹',
+    nextPage: '›',
+    pagesInfoPrefix: '',
+    pagesInfoSuffix: 'pages',
+    recent: 'just now',
+    minutesAgo: '{n}m ago',
+    hoursAgo: '{n}h ago',
+    daysAgo: '{n}d ago',
+  }
+};
+
+/** 语言检测：手动选择 > 浏览器首选语言 > 时区（大中华区） > 英文 */
+function detectLang(){
+  try {
+    const saved = localStorage.getItem('cd_lang');
+    if (saved === 'zh' || saved === 'en') return saved;
+  } catch {}
+  const first = String((navigator.languages && navigator.languages.length ? navigator.languages[0] : navigator.language) || '').toLowerCase();
+  if (first.startsWith('zh')) return 'zh';
+  if (first) return 'en';
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+    if (/^Asia\/(Shanghai|Chongqing|Harbin|Urumqi|Kashgar|Hong_Kong|Macau|Taipei)$/.test(tz)) return 'zh';
+  } catch {}
+  return 'en';
+}
+
+let LANG = detectLang();
+const t = (key, params) => {
+  let s = (I18N[LANG] && I18N[LANG][key]) ?? I18N.en[key] ?? key;
+  if (params) for (const k in params) s = s.split('{' + k + '}').join(params[k]);
+  return s;
+};
+
+// 应用 i18n 到静态元素
+document.documentElement.lang = LANG === 'zh' ? 'zh-CN' : 'en';
+document.title = t('pageTitle');
+
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => r.querySelectorAll(s);
+const grid = $("#grid");
+const pagination = $("#pagination");
+const totalEl = $("#total");
+const qInput = $("#q");
+const sortSel = $("#sort");
+
+$('#brand-title').textContent = t('brandTitle');
+$('#brand-subtitle').textContent = t('brandSubtitle');
+$('#q').placeholder = t('searchPlaceholder');
+$('#sort option[value="hot"]').textContent = t('sortHot');
+$('#sort option[value="newest"]').textContent = t('sortNewest');
+$('#sort option[value="downloads"]').textContent = t('sortDownloads');
+$('#sort option[value="views"]').textContent = t('sortViews');
+$('#stats-total-prefix').textContent = t('statsTotalPrefix');
+$('#stats-total-suffix').textContent = t('statsTotalSuffix');
+$('#stats-perpage-prefix').textContent = t('statsPerpagePrefix');
+$('#stats-perpage-suffix').textContent = t('statsPerpageSuffix');
+$('#footer-text').innerHTML = t('footerText');
+$('#lang-toggle').textContent = t('switchTo');
+$('#lang-toggle').onclick = () => {
+  try { localStorage.setItem('cd_lang', LANG === 'zh' ? 'en' : 'zh'); } catch {}
+  location.reload();
+};
+
+let state = { page: 1, sort: "hot", q: "", total: 0 };
+let debounceTimer = null;
+
+const EXT_ICON = {
+  zip:"📦", rar:"📦", "7z":"📦", tar:"📦", gz:"📦",
+  png:"🖼", jpg:"🖼", jpeg:"🖼", gif:"🖼", webp:"🖼", svg:"🖼", heic:"🖼",
+  mp4:"🎬", mov:"🎬", mkv:"🎬", avi:"🎬",
+  mp3:"🎵", flac:"🎵", wav:"🎵", aac:"🎵",
+  pdf:"📄", doc:"📝", docx:"📝", xls:"📊", xlsx:"📊", ppt:"📊", pptx:"📊",
+  txt:"📄", md:"📄", json:"📄", csv:"📊",
+  exe:"⚙️", msi:"⚙️", dmg:"⚙️", apk:"📱", ipa:"📱", appimage:"⚙️", deb:"⚙️",
+};
+function extOf(n){ return (n.split(".").pop() || "").toLowerCase(); }
+function iconFor(n){ return EXT_ICON[extOf(n)] || "📎"; }
+function fmtSize(b){
+  if(b==null||b===0) return "0 B";
+  const u=["B","KB","MB","GB","TB"]; let i=0; let n=Number(b);
+  while(n>=1024&&i<u.length-1){n/=1024;i++;}
+  return (i===0?n:n.toFixed(n<10?2:n<100?1:0))+" "+u[i];
+}
+function fmtDate(ts){
+  if(!ts) return "";
+  const d=new Date(ts); const now=Date.now();
+  const diff=now-ts;
+  if(diff<60e3) return t('recent');
+  if(diff<3600e3) return t('minutesAgo',{n:Math.floor(diff/60e3)});
+  if(diff<86400e3) return t('hoursAgo',{n:Math.floor(diff/3600e3)});
+  if(diff<7*86400e3) return t('daysAgo',{n:Math.floor(diff/86400e3)});
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+}
+
+async function load(){
+  grid.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+  const params = new URLSearchParams({ page: state.page, sort: state.sort, size: 12 });
+  if(state.q) params.set("q", state.q);
+  const url = `/api/market?${params.toString()}`;
+  try {
+    const r = await fetch(url);
+    if(!r.ok) throw new Error("HTTP "+r.status);
+    const d = await r.json();
+    if(!d.ok){ renderEmpty("😵",t('loadFailTitle'),t('loadFailDesc')); return; }
+    state.total = d.total;
+    totalEl.textContent = d.total;
+    render(d.items || [], d.total, d.page, d.size);
+  } catch(e){
+    console.error(e);
+    renderEmpty("😵",t('networkErrTitle'),t('networkErrDesc'));
+  }
+}
+
+function render(items, total, page, size){
+  if(!items.length){
+    grid.innerHTML = state.q
+      ? `<div class="empty"><div class="emoji">🔍</div><h3>${t('emptySearchTitle')}</h3><p>${t('emptySearchDesc')}</p></div>`
+      : `<div class="empty"><div class="emoji">📭</div><h3>${t('emptyMarketTitle')}</h3><p>${t('emptyMarketDesc')}</p></div>`;
+    pagination.innerHTML = "";
+    return;
+  }
+  const heatMax = items[0].heat || 1;
+  const cards = items.map((it, i) => {
+    const heat = it.heat || 0;
+    const rank = page === 1 ? i + 1 : null;
+    const heatClass = rank && rank <= 3 ? "hot" : (heat > heatMax * 0.5 ? "popular" : "");
+    const title = it.market_title || it.file_name;
+    const desc = it.market_desc || "";
+    const showHeatBadge = state.sort === "hot" && rank && rank <= 10;
+    let heatLabel;
+    if (rank === 1) heatLabel = t('heatChampion');
+    else if (rank === 2) heatLabel = t('heatRank2');
+    else if (rank === 3) heatLabel = t('heatRank3');
+    else heatLabel = `🔥 ${heat}`;
+    const safeTitle = escapeHtml(title);
+    const safeFileName = escapeHtml(it.file_name);
+    const safeDesc = escapeHtml(desc);
+    const safeUrl = escapeHtml(it.url);
+    return `
+      <a class="card" href="${safeUrl}" style="animation-delay:${Math.min(i*40,400)}ms">
+        ${showHeatBadge ? `<div class="heat ${heatClass}">${escapeHtml(heatLabel)}</div>` : ""}
+        <div class="card-head">
+          <div class="icon">${iconFor(it.file_name)}</div>
+          <div style="flex:1;min-width:0">
+            <div class="title" title="${safeTitle}">${safeTitle}${it.market_title && it.market_title !== it.file_name ? `<div class="alt" style="font-size:12px">${safeFileName}</div>` : ""}</div>
+          </div>
+        </div>
+        ${desc ? `<div class="desc" title="${safeDesc}">${safeDesc}</div>` : `<div class="desc" style="min-height:38px;color:rgba(255,255,255,.35);font-style:italic">${t('noDesc')}</div>`}
+        <div class="meta">
+          <div class="meta-left">
+            <span class="pill">📦 ${fmtSize(it.file_size)}</span>
+            <span class="pill">⬇️ ${(it.download_count || 0)} ${t('downloadsLabel')}</span>
+            <span class="pill">👁 ${(it.market_views || 0)} ${t('viewsLabel')}</span>
+          </div>
+          <span class="pill" style="color:rgba(255,255,255,.5)">${fmtDate(it.created_at)}</span>
+        </div>
+      </a>
+    `;
+  }).join("");
+  grid.innerHTML = cards;
+  renderPagination(total, page, size);
+}
+
+function renderPagination(total, page, size){
+  const pages = Math.max(1, Math.ceil(total / size));
+  if(pages <= 1){ pagination.innerHTML = ""; return; }
+  const btns = [];
+  btns.push(`<button ${page<=1?"disabled":""} data-p="${page-1}">${t('prevPage')}</button>`);
+  const range = getPageRange(page, pages);
+  if(range.start > 1){ btns.push(`<button data-p="1">1</button>`); if(range.start > 2) btns.push(`<span class="info">…</span>`); }
+  for(let i = range.start; i <= range.end; i++){
+    btns.push(`<button class="${i===page?'active':''}" data-p="${i}">${i}</button>`);
+  }
+  if(range.end < pages){ if(range.end < pages-1) btns.push(`<span class="info">…</span>`); btns.push(`<button data-p="${pages}">${pages}</button>`); }
+  btns.push(`<button ${page>=pages?"disabled":""} data-p="${page+1}">${t('nextPage')}</button>`);
+  pagination.innerHTML = `<span class="info">${t('pagesInfoPrefix')} ${pages} ${t('pagesInfoSuffix')}</span>` + btns.join("");
+  pagination.querySelectorAll("button[data-p]").forEach(b => b.addEventListener("click", () => {
+    state.page = Number(b.dataset.p); load();
+  }));
+}
+function getPageRange(cur, total){
+  if(total <= 7) return { start: 1, end: total };
+  let start = Math.max(1, cur - 2);
+  let end = Math.min(total, start + 4);
+  if(end - start < 4) start = Math.max(1, end - 4);
+  return { start, end };
+}
+
+function escapeHtml(s){ const d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
+
+// 事件
+qInput.addEventListener("input", () => {
+  clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(() => { state.q = qInput.value.trim(); state.page = 1; load(); }, 300);
+});
+sortSel.addEventListener("change", () => { state.sort = sortSel.value; state.page = 1; load(); });
+
+function renderEmpty(emoji, title, desc){
+  grid.innerHTML = `<div class="empty"><div class="emoji">${escapeHtml(emoji)}</div><h3>${escapeHtml(title)}</h3><p>${escapeHtml(desc)}</p></div>`;
+}
+
+// 初始
+load();
+</script>
+</body>
+</html>
