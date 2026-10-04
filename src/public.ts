@@ -578,7 +578,7 @@ async function streamFile(
   if (obj.etag) headers.set("etag", obj.etag);
   headers.set("accept-ranges", "bytes");
   headers.set("cache-control", "no-store");
-  const displayName = row.download_name || row.name;
+  const displayName = row.name;
   headers.set("content-disposition", `attachment; filename*=UTF-8''${encodeURIComponent(displayName)}`);
   const { addSecurityHeaders } = await import("./pages");
   addSecurityHeaders(headers, { isDownload: true });

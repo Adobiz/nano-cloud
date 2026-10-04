@@ -23,7 +23,7 @@ function fixture(initialCode=null) {
   const localStorage={getItem:k=>values.get(k)||null,setItem:(k,v)=>values.set(k,v),removeItem:k=>values.delete(k)};
   const location={href:'https://test.invalid/s/share',pathname:'/s/share',search:'',origin:'https://test.invalid',reload(){}};
   const context=vm.createContext({document,localStorage,location,navigator:{language:'zh-CN'},URL,URLSearchParams,console,
-    setTimeout:(fn,ms)=>{timers.push({fn,ms});},alert(){},fetch:async()=>Response.json(info)});
+    setTimeout:(fn,ms)=>{timers.push({fn,ms});},clearTimeout(){},alert(){},fetch:async()=>Response.json(info)});
   context.window=context;
   vm.runInContext(script,context);
   return {context,ids,values,timers,localStorage,location,body,
@@ -114,4 +114,27 @@ test('all shipped HTML scripts parse as JavaScript',()=>{
   f.render({...info,github_button_enabled:false});assert.equal(f.ids.get('github-button').hidden,true);
   f.render({...info,github_button_enabled:true});assert.equal(f.ids.get('github-button').hidden,false);
   f.render(info);assert.equal(f.ids.get('github-button').hidden,false);
+});
+
+ test('verification starts when the page renders and download clicks reuse the same widget',async()=>{
+  const f=fixture();let renders=0;
+  f.context.turnstile={render(box,options){renders++;options.callback('ready-token');return 'widget';},remove(){}};
+  const d={...info,turnstile:{enabled:true,sitekey:'test-key',mode:'on_download'}};
+  f.render(d);
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(renders,1);assert.equal(f.context.__tsToken,'ready-token');
+  assert.equal(await f.context.challengeToken(d,d.turnstile,true,true),'ready-token');assert.equal(renders,1);
+});
+
+ test('verification script timeout shows a retry and retry loads a fresh script',async()=>{
+  const f=fixture();const d={...info,turnstile:{enabled:true,sitekey:'test-key',mode:'on_download'}};
+  f.render(d);
+  const head=f.context.document.head;
+  assert.equal(head.children.length,1);assert.match(head.children[0].src,/render=explicit/);
+  await f.timersAt(15000);
+  assert.match(f.ids.get('ts-container').innerHTML,/验证组件加载失败/);
+  f.ids.get('ts-retry').onclick();assert.equal(head.children.length,2);
+  f.context.turnstile={render(box,options){options.callback('retried');return 'widget';},remove(){}};
+  f.context.onTurnstileLoad();await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(f.context.__tsToken,'retried');
 });

@@ -47,8 +47,8 @@ function sanitizeName(name: string): string {
 }
 
 /** 生成带文件名后缀的直链 URL：/d/{token}/{filename}，文件名做 URL 编码 */
-function buildDirectUrl(token: string, fileName?: string | null, downloadName?: string | null): string {
-  const displayName = downloadName?.trim() || fileName?.trim();
+function buildDirectUrl(token: string, fileName?: string | null): string {
+  const displayName = fileName?.trim();
   if (!displayName) return `/d/${token}`;
   const safe = displayName.replace(/[\\/]/g, "_");
   return `/d/${token}/${encodeURIComponent(safe)}`;
@@ -875,7 +875,7 @@ export async function handleAdminApi(
     )
       .bind(id, body.file_id, Date.now(), expiresAt, maxDownloads, downloadName, notes)
       .run();
-    return json({ ok: true, id, url: buildDirectUrl(id, file.name, downloadName) }, 201);
+    return json({ ok: true, id, url: buildDirectUrl(id, file.name) }, 201);
   }
 
   // ── 直链列表 ──
@@ -898,7 +898,7 @@ export async function handleAdminApi(
     const now = Date.now();
     const list = (results ?? []).map((dl: any) => ({
       ...dl,
-      url: buildDirectUrl(dl.id, dl.file_name, dl.download_name),
+      url: buildDirectUrl(dl.id, dl.file_name),
       status: dl.revoked
         ? "revoked"
         : dl.expires_at && dl.expires_at < now
@@ -925,7 +925,7 @@ export async function handleAdminApi(
         .bind(dlId)
         .first();
       if (!row) return json({ error: msg(req, "直链不存在", "Direct link not found") }, 404);
-      return json({ ...row, url: buildDirectUrl((row as any).id, (row as any).file_name, (row as any).download_name) });
+      return json({ ...row, url: buildDirectUrl((row as any).id, (row as any).file_name) });
     }
 
     if (method === "PUT") {

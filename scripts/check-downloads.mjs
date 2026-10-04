@@ -130,7 +130,7 @@ test('password failure, missing objects and invalid ranges never activate or pay
   assert.equal(f.count(),0);assert.equal(f.codeRow().used_bytes,0);assert.equal(f.codeRow().status,'unused');
 });
 
-test('share-page name matches the download filename, with original-name fallback',async()=>{
+test('share-page display name changes without renaming downloaded files',async()=>{
   const f=await fixture();
   for (const customName of ['指定的名称.zip', null]) {
     f.sqlite.prepare('UPDATE shares SET download_name=?').run(customName);
@@ -139,7 +139,7 @@ test('share-page name matches the download filename, with original-name fallback
     assert.equal((await info.json()).name,expected);
     const download=await f.api.handleDownload(f.request('/s/share/download',{method:'HEAD'}),f.env,f.ctx,'share');
     assert.equal(download.status,200);
-    assert.equal(download.headers.get('content-disposition'),`attachment; filename*=UTF-8''${encodeURIComponent(expected)}`);
+    assert.equal(download.headers.get('content-disposition'),"attachment; filename*=UTF-8''file.txt");
   }
   assert.equal(f.sqlite.prepare('SELECT name FROM files').get().name,'file.txt');
 });
@@ -630,4 +630,13 @@ test('share editing keeps token and counters, preserves passwords unless explici
   assert.equal((await (await f.api.handleShareInfo(f.request('/s/share/info'),f.env,'share')).json()).name,'file.txt');
   for (const body of [{max_downloads:-1},{max_downloads:1.5},{expires_at:'bad'},{password:7},{download_name:[]}]) assert.equal((await edit(body)).status,400);
   assert.equal((await adminCall(f,'/api/admin/shares/missing',{method:'PUT',body:'{}'})).status,404);
+});
+
+ test('direct downloads and generated URLs retain the original filename despite a custom display name',async()=>{
+  const f=await fixture();
+  f.sqlite.prepare("UPDATE direct_links SET download_name='自定义名称'").run();
+  const list=await adminCall(f,'/api/admin/direct-links');
+  const data=await list.json();assert.equal(data.direct_links[0].url,'/d/direct/file.txt');
+  const download=await f.api.handleDirectDownload(f.request('/d/direct/自定义名称',{method:'HEAD'}),f.env,f.ctx,'direct');
+  assert.equal(download.status,200);assert.equal(download.headers.get('content-disposition'),"attachment; filename*=UTF-8''file.txt");
 });
