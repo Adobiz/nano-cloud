@@ -278,6 +278,10 @@ button:active,.btn:active { transform:translateY(1px); }
  .modal .field > div { flex-wrap:wrap; }
  .login-card { padding:30px 22px; }
 }
+
+.settings-save-bar { position:sticky; bottom:0; z-index:10; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; padding:16px 0 max(16px,env(safe-area-inset-bottom)); border-top:1px solid var(--stroke); background:var(--bg-page); }
+#settings-save-status { font-size:14px; }
+@media(max-width:760px) { .settings-save-bar .btn { width:100%; } }
 </style>
 </head>
 <body>
@@ -1108,6 +1112,7 @@ const confirmDialog = (title, msg, danger=true) => new Promise(resolve => {
 });
 
 function toggleLang(){
+  if (!allowSettingsLeave()) return;
   try { localStorage.setItem('cd_lang', LANG === 'zh' ? 'en' : 'zh'); } catch {}
   location.reload();
 }
@@ -1131,6 +1136,7 @@ let loginStage = 'password'; // 'password' | '2fa' | 'recovery'
 let savedLoginKey = ''; // 第一阶段输入的 admin key
 
 function showLogin(){
+  settingsDirty = false;
   document.title = t('docTitle', {site: siteTitle});
 
   if(loginStage === 'password'){
@@ -1379,7 +1385,7 @@ async function showApp(){
     if (subBtn) switchTab(subBtn.dataset.tab);
   });
 
-  $('#logout-btn').onclick = async () => { await api('/api/admin/logout', {method:'POST'}); showLogin(); };
+  $('#logout-btn').onclick = async () => { if (!allowSettingsLeave()) return; await api('/api/admin/logout', {method:'POST'}); showLogin(); };
   $('#traffic-pill').onclick = () => switchTab('settings');
   $('#lang-btn').onclick = toggleLang;
   $('#theme-toggle').onclick = async () => {
@@ -1448,6 +1454,7 @@ const TAB_LOADERS = {
 };
 
 function switchTab(tab){
+  if (!allowSettingsLeave()) {const picker = $('#mobile-page');if(picker) picker.value=currentTab;return;}
   const epoch = ++navigationEpoch;
   currentTab = tab;
   const mobilePage = $('#mobile-page');
@@ -1847,10 +1854,12 @@ async function loadStorage(){
               <td></td>
             </tr>`;
           }
-          const icon = ficon(e.name);
+          const icon = ficon(e.original_name || e.name);
           return `<tr data-key="${rowKey}">
             <td><input type="checkbox" class="stg-chk"></td>
-            <td style="display:flex;align-items:center;gap:10px">${icon}<span style="font-family:ui-monospace,monospace">${esc(e.name)}</span></td>
+            <td class="name-cell">${icon} ${esc(e.original_name || e.name)}
+              <div style="font-size:12px;color:var(--text-3);overflow-wrap:anywhere">${esc(e.key)}</div>
+              ${e.registered === false ? `<span class="tag">${LANG === 'zh' ? '未登记' : 'Unregistered'}</span>` : ''}</td>
             <td class="num">${fmtSize(e.size)}</td>
             <td class="num" style="white-space:nowrap">${e.lastModified ? fmtTime(e.lastModified) : '—'}</td>
             <td style="white-space:nowrap">
@@ -1947,12 +1956,13 @@ async function loadShares(){
             <td class="num">${fmtTime(s.created_at)}</td>
             <td class="num">${s.expires_at ? fmtTime(s.expires_at) : esc(t('forever'))}</td>
             <td><span class="tag ${s.status}"><i></i>${esc(t(STATUS_KEY[s.status]))}</span></td>
-            <td><button class="btn sm danger" data-rv="${s.id}">${esc(t('revoke'))}</button></td>
+            <td><div class="actions-cell"><button class="btn sm" data-edit-share="${s.id}">${LANG === 'zh' ? '编辑' : 'Edit'}</button><button class="btn sm danger" data-rv="${s.id}">${esc(t('revoke'))}</button></div></td>
           </tr>`;
         }).join('')}
         </tbody>
       </table></div>` : `<div class="empty"><div class="icon">🔗</div>${esc(t('noShares'))}</div>`}
     </div>`;
+  $$('[data-edit-share]').forEach(button => button.onclick = () => openEditShareModal(shares.find(share => share.id === button.dataset.editShare)));
   $('#cleanup-shares').onclick = async () => {
     if(!(await confirmDialog(t('confirmCleanupT'), t('confirmCleanupD'), false))) return;
     const r = await api('/api/admin/shares/cleanup', { method:'POST' });
@@ -1987,6 +1997,37 @@ async function loadShares(){
   $$('[data-cdirect]').forEach(b => {
     b.onclick = () => copyText(b.dataset.cdirect);
   });
+}
+
+function openEditShareModal(share) {
+  const zh = LANG === 'zh';
+  const expiry = share.expires_at ? new Date(share.expires_at) : null;
+  const localExpiry = expiry ? new Date(expiry.getTime() - expiry.getTimezoneOffset()*60000).toISOString().slice(0,16) : '';
+  openModal(`
+    <h3>${zh ? '编辑分享链接' : 'Edit share link'}</h3>
+    <div class="sub">${esc(share.file_name)} · /s/${esc(share.id)}</div>
+    <div class="field"><label for="edit-share-name">${esc(t('downloadName'))}</label><input id="edit-share-name" value="${esc(share.download_name || '')}" placeholder="${esc(t('downloadNamePh'))}"></div>
+    <div class="field"><label for="edit-share-expiry">${zh ? '到期时间（留空为永久）' : 'Expiry (empty means never)'}</label><input type="datetime-local" id="edit-share-expiry" value="${localExpiry}"></div>
+    <div class="field"><label for="edit-share-max">${esc(t('maxDownloadsLabel'))}</label><input type="number" min="0" step="1" id="edit-share-max" value="${share.max_downloads || 0}"><div class="tip">${zh ? '已下载' : 'Downloaded'}: ${share.download_count}</div></div>
+    <div class="field"><label for="edit-share-password-mode">${esc(t('sharePassword'))}</label><select id="edit-share-password-mode"><option value="keep">${zh ? '保持现有密码' : 'Keep current password'}</option><option value="replace">${zh ? '设置新密码' : 'Set new password'}</option><option value="remove">${zh ? '移除密码' : 'Remove password'}</option></select><input type="password" id="edit-share-password" hidden autocomplete="new-password" placeholder="${zh ? '输入新密码' : 'New password'}"></div>
+    <div class="actions"><button class="btn" data-x>${esc(t('cancel'))}</button><button class="btn primary" id="edit-share-save">${zh ? '保存修改' : 'Save changes'}</button></div>`);
+  $('[data-x]').onclick = closeModal;
+  $('#edit-share-password-mode').onchange = e => { $('#edit-share-password').hidden = e.target.value !== 'replace'; };
+  $('#edit-share-save').onclick = async () => {
+    const button = $('#edit-share-save');
+    const dateValue = $('#edit-share-expiry').value;
+    const expiresAt = dateValue === localExpiry ? share.expires_at : (dateValue ? new Date(dateValue).getTime() : null);
+    const maxDownloads = Number($('#edit-share-max').value);
+    const mode = $('#edit-share-password-mode').value;
+    const password = $('#edit-share-password').value.trim();
+    if ((expiresAt !== null && !Number.isSafeInteger(expiresAt)) || !Number.isSafeInteger(maxDownloads) || maxDownloads < 0) {toast(zh ? '请输入有效的时间和下载次数' : 'Enter a valid expiry and download limit','err');return;}
+    if (mode === 'replace' && !password) {toast(zh ? '请输入新密码' : 'Enter a new password','err');return;}
+    const body = {download_name:$('#edit-share-name').value.trim() || null, expires_at:expiresAt, max_downloads:maxDownloads};
+    if (mode !== 'keep') body.password = mode === 'remove' ? null : password;
+    button.disabled = true;
+    try {await api(`/api/admin/shares/${share.id}`,{method:'PUT',body:JSON.stringify(body)});closeModal();toast(t('saved'));await loadShares();}
+    catch(error) {toast(error.message,'err');button.disabled=false;}
+  };
 }
 
 /* ═══════════ 记录 ═══════════ */
@@ -2777,8 +2818,46 @@ async function loadWebDAV(){
   });
 }
 
+let settingsDirty = false;
+let settingsBaseline = '';
+function settingsFormValues() {
+  return {
+      site_title: $('#st-title').value.trim(),
+      traffic_limit_gb: Number($('#st-limit').value) || 0,
+      max_downloads_per_ip: Number($('#st-perip').value) || 0,
+      count_window_hours: Number($('#st-window').value) || 0,
+      auto_ban: $('#st-autoban').checked,
+      ban_hours: Number($('#st-banhours').value) || 0,
+      oauth_enabled: $('#oauth-enabled').checked,
+      admin_ips: $('#st-adminips').value.trim(),
+      home_redirect_market: $('#st-home-market').checked,
+      github_button_enabled: $('#st-github-button').checked,
+      codes_floating_button_enabled: $('#st-codes-float').checked,
+      codes_floating_button_position: $('#st-codes-pos').value,
+      storage_provider: $('#st-backend').value,
+  };
+}
+function updateSettingsDirty() {
+  settingsDirty = JSON.stringify(settingsFormValues()) !== settingsBaseline;
+  const status = $('#settings-save-status');
+  if (status) {status.textContent = LANG === 'zh'
+    ? (settingsDirty ? '有未保存的修改，请点击保存设置' : '所有修改已保存')
+    : (settingsDirty ? 'Unsaved changes. Click Save settings.' : 'All changes saved');
+    status.style.color = settingsDirty ? 'var(--warning)' : 'var(--text-3)';}
+}
+function allowSettingsLeave() {
+  if (!settingsDirty) return true;
+  if (!window.confirm(LANG === 'zh' ? '设置尚未保存，确定放弃修改吗？' : 'Discard unsaved settings changes?')) return false;
+  settingsDirty = false;
+  return true;
+}
+window.addEventListener('beforeunload', event => {
+  if (settingsDirty) {event.preventDefault();event.returnValue = '';}
+});
+
 /* ═══════════ 设置 ═══════════ */
 async function loadSettings(){
+  if (!allowSettingsLeave()) return;
   const [s, twofaStatus, dbStatus] = await Promise.all([
     api('/api/admin/settings'),
     api('/api/admin/2fa/status').catch(() => ({enabled:false, cloudflare_recovery:false, recovery_remaining:0})),
@@ -3040,8 +3119,14 @@ async function loadSettings(){
         <button class="btn sm ${dbStatus && dbStatus.healthy ? '' : 'primary'}" id="db-repair">${esc(t('dbRepairBtn'))}</button>
       </div>
     </div>
-    <button class="btn primary" id="st-save" style="padding:14px 28px;font-size:15px;border-radius:18px">${esc(t('save'))}</button>
+    <div class="settings-save-bar"><span id="settings-save-status" role="status" aria-live="polite"></span><button class="btn primary" id="st-save">${esc(t('save'))}</button></div>
     </div>`;
+
+  settingsBaseline = JSON.stringify(settingsFormValues());
+  updateSettingsDirty();
+  const settingsPage = $('.settings-page');
+  settingsPage.addEventListener('input', updateSettingsDirty);
+  settingsPage.addEventListener('change', updateSettingsDirty);
 
   // ── 数据库工具按钮 ──
   $('#db-refresh')?.addEventListener('click', () => loadSettings());
@@ -3092,24 +3177,17 @@ async function loadSettings(){
   });
   $('#st-save')?.addEventListener('click', async () => {
     // 现在只保存非 Modal 的设置项；Turnstile 和 OAuth Provider 在各自 Modal 里保存
-    const body = {
-      site_title: $('#st-title').value.trim(),
-      traffic_limit_gb: Number($('#st-limit').value) || 0,
-      max_downloads_per_ip: Number($('#st-perip').value) || 0,
-      count_window_hours: Number($('#st-window').value) || 0,
-      auto_ban: $('#st-autoban').checked,
-      ban_hours: Number($('#st-banhours').value) || 0,
-      oauth_enabled: $('#oauth-enabled').checked,
-      admin_ips: $('#st-adminips').value.trim(),
-      home_redirect_market: $('#st-home-market').checked,
-      github_button_enabled: $('#st-github-button').checked,
-      codes_floating_button_enabled: $('#st-codes-float').checked,
-      codes_floating_button_position: $('#st-codes-pos').value,
-      storage_provider: $('#st-backend').value,
-    };
-    await api('/api/admin/settings', { method:'PUT', body: JSON.stringify(body) });
-    toast(t('saved'));
-    loadSettings();
+    const button = $('#st-save');
+    const body = settingsFormValues();
+    button.disabled = true;
+    try {
+      await api('/api/admin/settings', { method:'PUT', body: JSON.stringify(body) });
+      settingsBaseline = JSON.stringify(body);
+      updateSettingsDirty();
+      toast(t('saved'));
+      if (!settingsDirty) await loadSettings();
+    } catch (error) {toast(error.message,'err');}
+    finally {button.disabled = false;}
   });
 
   // ═══════════════════════════════════

@@ -590,3 +590,44 @@ test('WebDAV accepts UTF-8 account credentials and advertises the charset',async
 test('missing D1 binding preserves the actionable configuration error',async()=>{
   const f=await fixture();await assert.rejects(f.api.ensureSchema({...f.env,db:undefined}),/Database binding 'db'/);
 });
+
+ test('GitHub visibility persists through admin settings and reaches share info',async()=>{
+  const f=await fixture();
+  assert.equal((await (await adminCall(f,'/api/admin/settings')).json()).github_button_enabled,true);
+  for (const enabled of [false,true,false]) {
+    const saved=await adminCall(f,'/api/admin/settings',{method:'PUT',body:JSON.stringify({github_button_enabled:enabled})});
+    assert.equal(saved.status,200);
+    assert.equal(f.sqlite.prepare("SELECT value FROM settings WHERE key='github_button_enabled'").get().value,enabled?'1':'0');
+    assert.equal((await (await adminCall(f,'/api/admin/settings')).json()).github_button_enabled,enabled);
+    const info=await f.api.handleShareInfo(f.request('/s/share/info'),f.env,'share');
+    assert.equal((await info.json()).github_button_enabled,enabled);
+  }
+});
+
+test('storage browser resolves original names without changing keys or pagination',async()=>{
+  const f=await fixture();
+  f.env.r2.list=async()=>({objects:[{key:'object',size:10},{key:'unregistered',size:3}],delimitedPrefixes:['folder/'],truncated:true,cursor:'next-page'});
+  const response=await adminCall(f,'/api/admin/storage/objects');assert.equal(response.status,200);
+  const data=await response.json();assert.equal(data.nextMarker,'next-page');
+  const known=data.entries.find(e=>e.key==='object');assert.equal(known.original_name,'file.txt');assert.equal(known.registered,true);assert.equal(known.name,'object');
+  const unknown=data.entries.find(e=>e.key==='unregistered');assert.equal(unknown.original_name,null);assert.equal(unknown.registered,false);
+  assert.equal(data.entries.find(e=>e.isDir).name,'folder/');
+});
+
+test('share editing keeps token and counters, preserves passwords unless explicitly changed, and updates public metadata',async()=>{
+  const f=await fixture();
+  const originalHash=await f.api.hashPassword('old');
+  f.sqlite.prepare('UPDATE shares SET password_hash=?,download_count=2').run(originalHash);
+  const edit=body=>adminCall(f,'/api/admin/shares/share',{method:'PUT',body:JSON.stringify(body)});
+  assert.equal((await edit({download_name:'新名称.zip',expires_at:Date.now()+3600000,max_downloads:7})).status,200);
+  let row=f.sqlite.prepare('SELECT * FROM shares').get();assert.equal(row.id,'share');assert.equal(row.download_count,2);assert.equal(row.password_hash,originalHash);
+  const info=await f.api.handleShareInfo(f.request('/s/share/info'),f.env,'share');assert.equal((await info.json()).name,'新名称.zip');
+  assert.equal((await edit({password:'new'})).status,200);
+  assert.equal((await f.api.handleVerify(f.request('/s/share/verify',{method:'POST',body:JSON.stringify({password:'old'})}),f.env,'share')).status,401);
+  assert.equal((await f.api.handleVerify(f.request('/s/share/verify',{method:'POST',body:JSON.stringify({password:'new'})}),f.env,'share')).status,200);
+  assert.equal((await edit({password:null,download_name:null,expires_at:null,max_downloads:0})).status,200);
+  row=f.sqlite.prepare('SELECT * FROM shares').get();assert.equal(row.password_hash,null);assert.equal(row.password_cipher,null);assert.equal(row.max_downloads,null);assert.equal(row.download_count,2);
+  assert.equal((await (await f.api.handleShareInfo(f.request('/s/share/info'),f.env,'share')).json()).name,'file.txt');
+  for (const body of [{max_downloads:-1},{max_downloads:1.5},{expires_at:'bad'},{password:7},{download_name:[]}]) assert.equal((await edit(body)).status,400);
+  assert.equal((await adminCall(f,'/api/admin/shares/missing',{method:'PUT',body:'{}'})).status,404);
+});

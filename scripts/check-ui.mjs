@@ -47,3 +47,18 @@ test('accepting a confirmation dialog resolves approval exactly once',async()=>{
   const f=modalFixture(),pending=f.context.confirm('Delete','Confirm');
   f.ids.get('[data-ok]').onclick();assert.equal(await pending,true);
 });
+
+test('settings warn on unsaved edits, allow cancellation and clear when changes are reverted',()=>{
+  const source=admin.slice(admin.indexOf('let settingsDirty ='),admin.indexOf('/* ═══════════ 设置 ═══════════ */'));
+  const fields=new Map([...source.matchAll(/\$\('([^']+)'\)/g)].map(match=>[match[1],{value:'',checked:false,style:{}}]));
+  fields.get('#st-title').value='nano-cloud';let leave=false;const events={};
+  const context=vm.createContext({LANG:'zh',$:selector=>fields.get(selector),window:{confirm:()=>leave,addEventListener:(name,fn)=>events[name]=fn}});
+  vm.runInContext(source+'\nsettingsBaseline = JSON.stringify(settingsFormValues());',context);
+  context.updateSettingsDirty();assert.match(fields.get('#settings-save-status').textContent,/已保存/);
+  fields.get('#st-github-button').checked=true;context.updateSettingsDirty();assert.match(fields.get('#settings-save-status').textContent,/未保存/);
+  assert.equal(context.allowSettingsLeave(),false);
+  let prevented=false;events.beforeunload({preventDefault(){prevented=true;}});assert.equal(prevented,true);
+  fields.get('#st-github-button').checked=false;context.updateSettingsDirty();assert.equal(context.allowSettingsLeave(),true);
+  fields.get('#st-title').value='changed';context.updateSettingsDirty();leave=true;assert.equal(context.allowSettingsLeave(),true);
+  prevented=false;events.beforeunload({preventDefault(){prevented=true;}});assert.equal(prevented,false);
+});

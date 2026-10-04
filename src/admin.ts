@@ -376,7 +376,16 @@ export async function handleAdminApi(
     try {
       const st = await storage(env);
       const result = await st.list({ prefix, marker, limit });
-      return json({ ok: true, ...result, kind: st.kind });
+      const names = new Map<string, string>();
+      const keys = result.entries.filter(entry => !entry.isDir).map(entry => entry.key);
+      for (let offset = 0; offset < keys.length; offset += 80) {
+        const chunk = keys.slice(offset, offset + 80);
+        const rows = await env.db.prepare(`SELECT key, name FROM files WHERE key IN (${chunk.map((_, i) => '?' + (i + 1)).join(',')})`)
+          .bind(...chunk).all<{key:string; name:string}>();
+        for (const row of rows.results) names.set(row.key, row.name);
+      }
+      return json({ ok: true, ...result, entries:result.entries.map(entry => ({...entry,
+        ...(!entry.isDir ? {original_name:names.get(entry.key) ?? null, registered:names.has(entry.key)} : {})})), kind: st.kind });
     } catch (e: any) {
       return json({ ok: false, error: msg(req, `列存储对象失败: ${e?.message ?? e}`, `Storage list failed: ${e?.message ?? e}`) }, 500);
     }
@@ -514,6 +523,37 @@ export async function handleAdminApi(
 
   // ── 撤销/删除分享 ─────────────────────────────────
   const shareMatch = /^\/api\/admin\/shares\/([^/]+)$/.exec(path);
+  if (shareMatch && method === "PUT") {
+    const body = await readJson<Record<string, unknown>>(req);
+    const existing = await env.db.prepare("SELECT id FROM shares WHERE id = ?1").bind(shareMatch[1]).first();
+    if (!existing) return json({error:msg(req,"分享不存在","Share not found")},404);
+    const sets:string[] = [], values:(string|number|null)[] = [];
+    const set = (key:string, value:string|number|null) => {values.push(value);sets.push(`${key} = ?${values.length}`);};
+    if (body.download_name !== undefined) {
+      if (body.download_name !== null && typeof body.download_name !== "string") return json({error:"invalid_download_name"},400);
+      set("download_name", typeof body.download_name === "string" ? body.download_name.trim() || null : null);
+    }
+    if (body.expires_at !== undefined) {
+      if (body.expires_at !== null && (typeof body.expires_at !== "number" || !Number.isSafeInteger(body.expires_at) || body.expires_at < 0)) return json({error:"invalid_expires_at"},400);
+      set("expires_at", body.expires_at as number|null);
+    }
+    if (body.max_downloads !== undefined) {
+      if (body.max_downloads !== null && (typeof body.max_downloads !== "number" || !Number.isSafeInteger(body.max_downloads) || body.max_downloads < 0)) return json({error:"invalid_max_downloads"},400);
+      set("max_downloads", (body.max_downloads as number|null) || null);
+    }
+    // An omitted password preserves it; an empty string or null removes it.
+    if (body.password !== undefined) {
+      if (body.password !== null && typeof body.password !== "string") return json({error:"invalid_password"},400);
+      const password = typeof body.password === "string" ? body.password.trim() : "";
+      set("password_hash", password ? await hashPassword(password) : null);
+      set("password_cipher", password ? await encryptSecret(password, env.admin) : null);
+    }
+    if (!sets.length) return json({ok:true});
+    values.push(shareMatch[1]);
+    const result = await env.db.prepare(`UPDATE shares SET ${sets.join(', ')} WHERE id = ?${values.length}`).bind(...values).run();
+    if (!result.meta.changes) return json({error:msg(req,"分享不存在","Share not found")},404);
+    return json({ok:true});
+  }
   if (shareMatch && method === "DELETE") {
     const r = await env.db.prepare("DELETE FROM shares WHERE id = ?1").bind(shareMatch[1]).run();
     if ((r.meta.changes ?? 0) === 0) return json({ error: msg(req, "分享不存在", "Share not found") }, 404);
