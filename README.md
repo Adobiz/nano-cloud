@@ -153,6 +153,11 @@ wrangler.toml            上游保留的另一份配置
 
 nano-cloud 基于 [Admin666pro/cloud-r2pan](https://github.com/Admin666pro/cloud-r2pan) 开发。感谢原作者 **Admin666pro** 提供 Workers、R2、D1 架构以及文件分享、安全验证和多存储实现。本版本沿用上游架构，调整前端样式与项目名称，并修复下载、鉴权、存储和统计流程；README 的版式参考 FlareDrive。
 
+## 💖 支持我
+
+如果你觉得我的项目有用，欢迎通过 [爱发电](https://ifdian.net/a/adobiz) 支持我 ❤️  
+你的每一份支持都是我继续折腾的动力！
+
 ## 许可证
 
 [MIT](LICENSE)。保留上游作者的版权声明与许可。
