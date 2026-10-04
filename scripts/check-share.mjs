@@ -18,7 +18,7 @@ function fixture(initialCode=null) {
     appendChild(e){e.parentNode=this;this.children.push(e);return e;}
     addEventListener(){} remove(){this.removed=true;} focus(){} select(){}
   }
-  for(const id of ['app','loading-text','lang-toggle','brand-text','code-float','code-float-badge'])ids.set(id,new Element());
+  for(const id of ['app','loading-text','lang-toggle','brand-text','code-float','code-float-badge','github-button'])ids.set(id,new Element());
   const body=new Element(); const document={body,head:new Element(),documentElement:{},querySelector:s=>ids.get(s.slice(1))||null,getElementById:id=>ids.get(id)||null,createElement:()=>new Element()};
   const localStorage={getItem:k=>values.get(k)||null,setItem:(k,v)=>values.set(k,v),removeItem:k=>values.delete(k)};
   const location={href:'https://test.invalid/s/share',pathname:'/s/share',search:'',origin:'https://test.invalid',reload(){}};
@@ -107,4 +107,11 @@ test('all shipped HTML scripts parse as JavaScript',()=>{
     const source=readFileSync(new URL('../public/'+page+'.html',import.meta.url),'utf8');
     for(const m of source.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi))new vm.Script(m[1]);
   }
+});
+
+ test('GitHub button follows the setting and defaults to visible',()=>{
+  const f=fixture();
+  f.render({...info,github_button_enabled:false});assert.equal(f.ids.get('github-button').hidden,true);
+  f.render({...info,github_button_enabled:true});assert.equal(f.ids.get('github-button').hidden,false);
+  f.render(info);assert.equal(f.ids.get('github-button').hidden,false);
 });

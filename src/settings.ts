@@ -95,6 +95,7 @@ export interface Settings {
 
   // ═══════ 激活码浮动按钮（分享页右上角的卡片图标） ═══════
   /** 是否在分享页显示激活码浮动按钮。默认 true。 */
+  githubButtonEnabled: boolean;
   codesFloatingButtonEnabled: boolean;
   /** 浮动按钮位置：top-right（右上）或 top-left（左上）。默认 top-right。 */
   codesFloatingButtonPosition: "top-right" | "top-left";
@@ -172,6 +173,7 @@ export const DEFAULT_SETTINGS: Settings = {
   // 下载市场
   homeRedirectMarket: false,
   // 激活码浮动按钮
+  githubButtonEnabled: true,
   codesFloatingButtonEnabled: true,
   codesFloatingButtonPosition: "top-right",
   // 存储后端 —— 默认 R2（向后兼容）
@@ -256,6 +258,7 @@ export async function getSettings(env: Env): Promise<Settings> {
     adminIps: map.get("admin_ips") ?? "",
     homeRedirectMarket: map.get("home_redirect_market") === "1",
     // 激活码浮动按钮
+    githubButtonEnabled: map.get("github_button_enabled") !== "0",
     codesFloatingButtonEnabled: map.get("codes_floating_button_enabled") !== "0", // 默认 true
     codesFloatingButtonPosition: (map.get("codes_floating_button_position") ?? DEFAULT_SETTINGS.codesFloatingButtonPosition) as Settings["codesFloatingButtonPosition"],
     // 存储后端

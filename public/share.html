@@ -86,7 +86,7 @@ h1 { font-size:30px; line-height:1.5; overflow-wrap:anywhere; }
 .code-input-row { margin-top:20px; }.code-input-row input { margin-top:0; font-family:ui-monospace,monospace; }.code-btn-row { display:flex; gap:10px; margin-top:12px; }.code-btn-row button { flex:1; padding:11px; border:1px solid var(--stroke-strong); border-radius:7px; background:var(--sf); color:var(--text); font-size:14px; }.code-btn-row button.primary { background:var(--accent); color:#fffdf8; border-color:var(--accent); }
 .code-query-result { margin-top:14px; padding:12px; border:1px solid var(--stroke); border-radius:7px; font-size:14px; color:var(--text-2); }.code-query-result.ok { color:var(--success); }.code-query-result.warn { color:var(--warning); }.code-query-result.err { color:var(--danger); }.code-progress { height:4px; background:var(--bar-bg); margin-top:10px; overflow:hidden; }.code-progress i { display:block; height:100%; background:var(--accent); }
 @media(max-width:500px) { .card { padding:32px 22px; } h1 { font-size:26px; }.code-modal { padding:24px 20px; }.ts-wrap { margin-left:-10px; margin-right:-10px; } }
-.code-float[hidden] { display:none; }.code-float:not(.position-right) { top:max(80px,env(safe-area-inset-top)); }
+.code-float[hidden],.octo-float[hidden] { display:none; }.code-float:not(.position-right) { top:max(80px,env(safe-area-inset-top)); }
 
 /* Retheme legacy inline presentation without changing its JavaScript. */
 [style*="color:rgba(255,255,255"], [style*="color: rgba(255,255,255"] { color:var(--text-2)!important; }
@@ -148,7 +148,7 @@ body { padding-top:100px; }
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="3"/><path d="M8 10h8M8 14h4"/></svg>
   <span class="badge" id="code-float-badge" style="display:none"></span>
 </button>
-<a class="octo-float" href="https://github.com/Adobiz/nano-cloud" target="_blank" rel="noopener noreferrer" title="GitHub">
+<a id="github-button" hidden class="octo-float" href="https://github.com/Adobiz/nano-cloud" target="_blank" rel="noopener noreferrer" title="GitHub">
   <!-- Octocat silhouette — GitHub 官方吉祥物 -->
   <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
     <path d="M12 .5C5.73.5.75 5.48.75 11.75c0 4.97 3.22 9.19 7.69 10.68.56.1.77-.24.77-.54 0-.27-.01-1.16-.02-2.11-3.13.68-3.79-1.34-3.79-1.34-.51-1.3-1.25-1.64-1.25-1.64-1.02-.7.08-.68.08-.68 1.13.08 1.72 1.16 1.72 1.16 1 1.71 2.63 1.22 3.27.93.1-.73.39-1.22.71-1.5-2.5-.28-5.13-1.25-5.13-5.57 0-1.23.44-2.24 1.16-3.03-.12-.28-.5-1.43.11-2.99 0 0 .95-.3 3.11 1.15.9-.25 1.87-.37 2.83-.37.96 0 1.93.12 2.83.37 2.16-1.45 3.11-1.15 3.11-1.15.61 1.56.23 2.71.11 2.99.72.79 1.16 1.8 1.16 3.03 0 4.33-2.64 5.28-5.14 5.56.4.34.76 1.02.76 2.07 0 1.5-.01 2.71-.01 3.08 0 .3.21.65.78.54 4.46-1.49 7.68-5.71 7.68-10.68C23.25 5.48 18.27.5 12 .5z"/>
@@ -429,6 +429,7 @@ function renderError(title,msg){
 
 function render(d, siteName, oauthErr, oauthProviders){
   const ext = extOf(d.name);
+  document.getElementById("github-button").hidden = d.github_button_enabled === false;
   const gone = {
     gone:[t('goneTitle'), t('goneMsg')],
     expired:[t('expiredTitle'), t('expiredMsg')],

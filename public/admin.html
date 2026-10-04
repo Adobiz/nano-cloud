@@ -419,6 +419,8 @@ const I18N = {
     homeRedirectMarket: '下载市场作为首页',
     homeRedirectMarketD: '访客直接访问域名根路径 / 时，自动跳转到下载市场页面（/market）而不是管理后台（/admin）',
     homeRedirectMarketHint: '默认关闭。开启后，您的站点首页就是下载市场，普通访客无法直接看到 /admin。管理员仍然可以通过 /admin 显式访问后台。',
+    githubButton: '显示 GitHub 按钮',
+    githubButtonD: '在下载页面右下角显示 nano-cloud 的 GitHub 项目入口。',
     codesFloatingBtn: '🎟️ 激活码浮动按钮',
     codesFloatingBtnD: '在分享页右上角（或左上角）显示一个卡片图标，用户点击后可绑定激活码、查询额度、解绑',
     codesFloatingBtnHint: '默认开启。关闭后用户只能通过 URL 参数 ?code=XXX 携带激活码（不推荐）',
@@ -779,6 +781,8 @@ const I18N = {
     homeRedirectMarket: 'Marketplace as Homepage',
     homeRedirectMarketD: 'When visitors land on your root domain /, redirect them to the marketplace (/market) instead of the admin panel (/admin)',
     homeRedirectMarketHint: 'Off by default. When enabled, your site homepage becomes the marketplace. Admins can still reach /admin explicitly.',
+    githubButton: 'Show GitHub button',
+    githubButtonD: 'Show the nano-cloud GitHub project link in the bottom-right corner of the download page.',
     codesFloatingBtn: '🎟️ Activation Code Floating Button',
     codesFloatingBtnD: 'Show a card icon on the share page corner. Users can bind/unbind their code and check balance by clicking it.',
     codesFloatingBtnHint: 'On by default. When off, users can only use activation codes via the URL parameter ?code=XXX (not recommended).',
@@ -2849,6 +2853,15 @@ async function loadSettings(){
       </div>
       <div class="tip" style="margin-top:8px">${esc(t('homeRedirectMarketHint'))}</div>
     </div>
+    <div class="glass group">
+      <div class="row">
+        <div class="info"><div class="t">${esc(t('githubButton'))}</div><div class="d">${esc(t('githubButtonD'))}</div></div>
+        <label class="switch">
+          <input type="checkbox" id="st-github-button" aria-label="${esc(t('githubButton'))}" ${s.github_button_enabled !== false ? 'checked' : ''}>
+          <span class="track"><span class="thumb"></span></span>
+        </label>
+      </div>
+    </div>
     <!-- 激活码浮动按钮组 -->
     <div class="glass group">
       <div class="row">
@@ -3089,6 +3102,7 @@ async function loadSettings(){
       oauth_enabled: $('#oauth-enabled').checked,
       admin_ips: $('#st-adminips').value.trim(),
       home_redirect_market: $('#st-home-market').checked,
+      github_button_enabled: $('#st-github-button').checked,
       codes_floating_button_enabled: $('#st-codes-float').checked,
       codes_floating_button_position: $('#st-codes-pos').value,
       storage_provider: $('#st-backend').value,

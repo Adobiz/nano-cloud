@@ -1004,6 +1004,7 @@ export async function handleAdminApi(
       // 下载市场首页
       home_redirect_market: s.homeRedirectMarket,
       // 激活码浮动按钮
+      github_button_enabled: s.githubButtonEnabled,
       codes_floating_button_enabled: s.codesFloatingButtonEnabled,
       codes_floating_button_position: s.codesFloatingButtonPosition,
       // 存储后端
@@ -1085,6 +1086,9 @@ export async function handleAdminApi(
     }
 
     // 激活码浮动按钮
+    if (typeof body.github_button_enabled === "boolean") {
+      patch.github_button_enabled = body.github_button_enabled ? "1" : "0";
+    }
     if (typeof body.codes_floating_button_enabled === "boolean") {
       patch.codes_floating_button_enabled = body.codes_floating_button_enabled ? "1" : "0";
     }
